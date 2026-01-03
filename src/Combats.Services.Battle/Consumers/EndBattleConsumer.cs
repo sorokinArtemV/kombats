@@ -3,7 +3,6 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Combats.Contracts.Battle;
 using Combats.Services.Battle.Data;
-using Combats.Services.Battle.Data.Entities;
 
 namespace Combats.Services.Battle.Consumers;
 

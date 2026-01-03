@@ -11,6 +11,7 @@ public class MessagingOptions
     public RedeliveryOptions Redelivery { get; set; } = new();
     public OutboxOptions Outbox { get; set; } = new();
     public InboxOptions Inbox { get; set; } = new();
+    public SchedulerOptions Scheduler { get; set; } = new();
 }
 
 public class RabbitMqOptions
@@ -63,6 +64,11 @@ public class InboxOptions
     public bool Enabled { get; set; } = true;
     public int RetentionDays { get; set; } = 7;
     public int CleanupIntervalMinutes { get; set; } = 15;
+}
+
+public class SchedulerOptions
+{
+    public bool Enabled { get; set; } = true; // Enable delayed message scheduler by default
 }
 
 

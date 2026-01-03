@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Battle Test Client</title>
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        input, button { margin: 5px; padding: 5px; }
+        #log { border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: auto; background: #f5f5f5; }
+        .log-entry { margin: 2px 0; }
+    </style>
+</head>
+<body>
+    <h1>Battle Test Client (DEV-ONLY)</h1>
+    <div>
+        <label>Player ID (GUID):</label>
+        <input type="text" id="playerId" value="11111111-1111-1111-1111-111111111111" style="width: 300px;" />
+    </div>
+    <div>
+        <label>Battle ID:</label>
+        <input type="text" id="battleId" style="width: 300px;" />
+    </div>
+    <div>
+        <button onclick="connect()">Connect to SignalR</button>
+        <button onclick="joinBattle()">Join Battle</button>
+        <button onclick="submitAction()">Submit Action (Current Turn)</button>
+        <button onclick="submitNoAction()">Submit Empty (NoAction)</button>
+    </div>
+    <div>
+        <h3>Log:</h3>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        let connection = null;
+        let currentTurnIndex = 1;
+        let battleId = null;
+
+        const log = (msg, type = 'info') => {
+            const div = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.style.color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+            entry.textContent = new Date().toISOString() + ': ' + msg;
+            div.appendChild(entry);
+            div.scrollTop = div.scrollHeight;
+        };
+
+        function connect() {
+            const playerId = document.getElementById('playerId').value;
+            if (!playerId || !playerId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+                log('Invalid Player ID (must be GUID)', 'error');
+                return;
+            }
+
+            const url = 'http://localhost:5000/battlehub?playerId=' + playerId;
+            log('Connecting to: ' + url);
+            
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl(url, {
+                    skipNegotiation: true,
+                    transport: signalR.HttpTransportType.WebSockets
+                })
+                .withAutomaticReconnect()
+                .build();
+
+            connection.on('BattleReady', (data) => {
+                log('BattleReady: ' + JSON.stringify(data, null, 2), 'success');
+            });
+
+            connection.on('TurnOpened', (data) => {
+                log('TurnOpened: ' + JSON.stringify(data, null, 2), 'success');
+                currentTurnIndex = data.turnIndex;
+                log('Current turn index updated to: ' + currentTurnIndex);
+            });
+
+            connection.on('BattleEnded', (data) => {
+                log('BattleEnded: ' + JSON.stringify(data, null, 2), 'success');
+                log('Battle is over!', 'success');
+            });
+
+            connection.onreconnecting(() => {
+                log('Reconnecting...', 'error');
+            });
+
+            connection.onreconnected(() => {
+                log('Reconnected', 'success');
+            });
+
+            connection.start()
+                .then(() => {
+                    log('Connected to SignalR', 'success');
+                })
+                .catch(err => {
+                    log('Connection error: ' + err, 'error');
+                });
+        }
+
+        async function joinBattle() {
+            battleId = document.getElementById('battleId').value;
+            if (!battleId || !battleId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+                log('Invalid Battle ID (must be GUID)', 'error');
+                return;
+            }
+
+            if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+                log('Not connected to SignalR. Click "Connect" first.', 'error');
+                return;
+            }
+
+            try {
+                const snapshot = await connection.invoke('JoinBattle', battleId);
+                log('Snapshot received: ' + JSON.stringify(snapshot, null, 2), 'success');
+                currentTurnIndex = snapshot.turnIndex;
+                log('Current turn index: ' + currentTurnIndex);
+            } catch (err) {
+                log('JoinBattle error: ' + err, 'error');
+            }
+        }
+
+        async function submitAction() {
+            if (!battleId) {
+                log('Battle ID not set. Join battle first.', 'error');
+                return;
+            }
+
+            if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+                log('Not connected to SignalR', 'error');
+                return;
+            }
+
+            const action = JSON.stringify({ actionType: 'attack', target: 'enemy', value: 100 });
+            try {
+                await connection.invoke('SubmitTurnAction', battleId, currentTurnIndex, action);
+                log('Action submitted for turn ' + currentTurnIndex, 'success');
+            } catch (err) {
+                log('SubmitTurnAction error: ' + err, 'error');
+            }
+        }
+
+        async function submitNoAction() {
+            if (!battleId) {
+                log('Battle ID not set. Join battle first.', 'error');
+                return;
+            }
+
+            if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
+                log('Not connected to SignalR', 'error');
+                return;
+            }
+
+            try {
+                await connection.invoke('SubmitTurnAction', battleId, currentTurnIndex, '');
+                log('Empty action submitted (NoAction) for turn ' + currentTurnIndex, 'success');
+            } catch (err) {
+                log('SubmitTurnAction error: ' + err, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
+
+

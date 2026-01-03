@@ -3,7 +3,7 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Combats.Contracts.Battle;
 using Combats.Services.Battle.Data;
-using Combats.Services.Battle.Data.Entities;
+using Combats.Services.Battle.Entities;
 
 namespace Combats.Services.Battle.Consumers;
 
@@ -52,6 +52,7 @@ public class CreateBattleConsumer : IConsumer<CreateBattle>
                 MatchId = battle.MatchId,
                 PlayerAId = battle.PlayerAId,
                 PlayerBId = battle.PlayerBId,
+                Ruleset = command.Ruleset,
                 State = battle.State,
                 BattleServer = null, // Removed hardcoded value
                 CreatedAt = battle.CreatedAt,

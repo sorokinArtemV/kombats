@@ -1,4 +1,4 @@
-namespace Combats.Services.Battle.Data.Entities;
+namespace Combats.Services.Battle.Entities;
 
 public class BattleEntity
 {

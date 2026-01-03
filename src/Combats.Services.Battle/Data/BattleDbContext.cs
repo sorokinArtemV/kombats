@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Combats.Infrastructure.Messaging.Inbox;
-using Combats.Services.Battle.Data.Entities;
+using Combats.Services.Battle.Entities;
 
 namespace Combats.Services.Battle.Data;
 

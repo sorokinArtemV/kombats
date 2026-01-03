@@ -1,12 +1,23 @@
+version: "3.9"
+
 services:
-  postgres-container:
-    image: postgres:latest
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
     environment:
-    - POSTGRES_USER=postgres
-    - POSTGRES_PASSWORD=postgres
-    - POSTGRES_DB=auctions
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auctions
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auctions"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   rabbitmq:
     build: ./src/Combats.Infrastructure.Messaging
@@ -14,13 +25,33 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    command: >
+      sh -c "rabbitmq-plugins enable --offline rabbitmq_delayed_message_exchange &&
+             rabbitmq-server"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
       RABBITMQ_DEFAULT_VHOST: /
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
+  postgres_data:
   rabbitmq_data:
-
+  redis_data:
