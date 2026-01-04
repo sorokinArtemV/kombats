@@ -11,6 +11,15 @@ using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+});
+
 // Add services to the container
 builder.Services.AddControllers();
 
@@ -33,6 +42,9 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 // Register Battle State Store
 builder.Services.AddScoped<IBattleStateStore, RedisBattleStateStore>();
 
+// Register Battle Engine (domain layer)
+builder.Services.AddScoped<Combats.Services.Battle.Domain.IBattleEngine, Combats.Services.Battle.Domain.BattleEngine>();
+
 // Configure SignalR
 builder.Services.AddSignalR();
 
@@ -46,6 +58,7 @@ builder.Services.AddMessaging<BattleDbContext>(
         x.AddConsumer<BattleCreatedEngineConsumer>();
         x.AddConsumer<ResolveTurnConsumer>();
         x.AddConsumer<EndBattleConsumer>();
+        x.AddConsumer<BattleEndedProjectionConsumer>();
     },
     messagingBuilder =>
     {
@@ -62,6 +75,11 @@ builder.Services.AddHostedService<BattleWatchdogService>();
 
 var app = builder.Build();
 
+
+app.UseRouting();
+
+app.UseCors("AllowAll");
+
 // DEV-ONLY: Add dev SignalR auth middleware (only in Development)
 if (app.Environment.IsDevelopment())
 {
@@ -70,6 +88,10 @@ if (app.Environment.IsDevelopment())
 
 // Configure the HTTP request pipeline
 app.UseHttpsRedirection();
+
+// Enable static files for dev UI
+app.UseStaticFiles();
+
 app.UseAuthorization();
 app.MapControllers();
 

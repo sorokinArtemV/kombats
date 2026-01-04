@@ -37,6 +37,13 @@ public class BattleCreatedEngineConsumer : IConsumer<BattleCreated>
             battleId, context.MessageId, context.CorrelationId);
 
         // Idempotency guard: try to initialize battle state
+        // Initialize with default stats (Strength=10, Stamina=10) for both players
+        const int defaultStrength = 10;
+        const int defaultStamina = 10;
+        var hpPerStamina = message.Ruleset.HpPerStamina > 0 ? message.Ruleset.HpPerStamina : 10;
+        var initialMaxHpA = defaultStamina * hpPerStamina;
+        var initialMaxHpB = defaultStamina * hpPerStamina;
+        
         var initialState = new BattleState
         {
             BattleId = battleId,
@@ -48,7 +55,13 @@ public class BattleCreatedEngineConsumer : IConsumer<BattleCreated>
             TurnIndex = 0,
             NoActionStreakBoth = 0,
             LastResolvedTurnIndex = 0,
-            Version = 1
+            Version = 1,
+            PlayerAHp = initialMaxHpA,
+            PlayerBHp = initialMaxHpB,
+            PlayerAStrength = defaultStrength,
+            PlayerAStamina = defaultStamina,
+            PlayerBStrength = defaultStrength,
+            PlayerBStamina = defaultStamina
         };
         // ArenaOpen phase deadline is set to now (meaningless but consistent)
         initialState.SetDeadlineUtc(DateTime.UtcNow);

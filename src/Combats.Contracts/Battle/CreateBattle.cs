@@ -16,7 +16,12 @@ public record Ruleset
     public int TurnSeconds { get; init; }
     public int NoActionLimit { get; init; }
     public int Seed { get; init; }
+    
+    // Fistfight combat parameters
+    public int HpPerStamina { get; init; } = 10; // Default: 1 Stamina = 10 HP
+    public int DamagePerStrength { get; init; } = 2; // Default: 1 Strength = 2 damage
 }
+
 
 
 

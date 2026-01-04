@@ -22,6 +22,16 @@ public class BattleState
     public Guid MatchId { get; set; } // Store MatchId for BattleEnded event
     public int Version { get; set; } = 1;
 
+    // Player HP (for battle engine)
+    public int? PlayerAHp { get; set; }
+    public int? PlayerBHp { get; set; }
+    
+    // Player stats (for fistfight combat)
+    public int? PlayerAStrength { get; set; }
+    public int? PlayerAStamina { get; set; }
+    public int? PlayerBStrength { get; set; }
+    public int? PlayerBStamina { get; set; }
+
     // Helper methods for DateTime conversion
     public DateTime GetDeadlineUtc() => new DateTime(DeadlineUtcTicks, DateTimeKind.Utc);
     

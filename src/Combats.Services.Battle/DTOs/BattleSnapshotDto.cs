@@ -15,5 +15,7 @@ public class BattleSnapshotDto
     public int LastResolvedTurnIndex { get; init; }
     public string? EndedReason { get; init; } // null if not ended, otherwise reason string
     public int Version { get; init; }
+    public int? PlayerAHp { get; init; }
+    public int? PlayerBHp { get; init; }
 }
 

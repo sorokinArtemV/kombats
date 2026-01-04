@@ -57,7 +57,9 @@ public class DevBattlesController : ControllerBase
                 Version = 1,
                 TurnSeconds = request.TurnSeconds ?? 10,
                 NoActionLimit = request.NoActionLimit ?? 3,
-                Seed = new Random().Next()
+                Seed = new Random().Next(),
+                HpPerStamina = request.HpPerStamina ?? 10,
+                DamagePerStrength = request.DamagePerStrength ?? 2
             },
             RequestedAt = DateTime.UtcNow
         };
@@ -84,6 +86,8 @@ public record CreateBattleRequest
     public Guid PlayerBId { get; init; }
     public int? TurnSeconds { get; init; }
     public int? NoActionLimit { get; init; }
+    public int? HpPerStamina { get; init; }
+    public int? DamagePerStrength { get; init; }
 }
 
 public record CreateBattleResponse

@@ -12,5 +12,6 @@ public interface IBattleStateStore
     public Task<List<Guid>> GetActiveBattlesAsync(CancellationToken cancellationToken = default);
     public Task StoreActionAsync(Guid battleId, int turnIndex, Guid playerId, string actionPayload, CancellationToken cancellationToken = default);
     public Task<(string? PlayerAAction, string? PlayerBAction)> GetActionsAsync(Guid battleId, int turnIndex, Guid playerAId, Guid playerBId, CancellationToken cancellationToken = default);
+    public Task<bool> UpdatePlayerHpAsync(Guid battleId, int playerAHp, int playerBHp, CancellationToken cancellationToken = default);
 }
 

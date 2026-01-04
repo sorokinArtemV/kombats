@@ -1,11 +1,20 @@
-using System.Data;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Combats.Contracts.Battle;
 using Combats.Services.Battle.Data;
 
 namespace Combats.Services.Battle.Consumers;
 
+/// <summary>
+/// Consumer for EndBattle command.
+/// This consumer validates the request and publishes a BattleEnded event.
+/// 
+/// Design principles:
+/// - EndBattle is a "request to end battle", not a direct DB mutation.
+/// - DB updates are handled by BattleEndedProjectionConsumer (single source of truth).
+/// - This consumer only validates and publishes the canonical BattleEnded event.
+/// </summary>
 public class EndBattleConsumer : IConsumer<EndBattle>
 {
     private readonly BattleDbContext _dbContext;
@@ -23,63 +32,56 @@ public class EndBattleConsumer : IConsumer<EndBattle>
     {
         var command = context.Message;
         _logger.LogInformation(
-            "Processing EndBattle command for BattleId: {BattleId}, Reason: {Reason}",
-            command.BattleId, command.Reason);
+            "Processing EndBattle command for BattleId: {BattleId}, Reason: {Reason}, MessageId: {MessageId}",
+            command.BattleId, command.Reason, context.MessageId);
 
-        // Load battle by BattleId (PK)
+        // Load battle by BattleId (PK) for validation only
         var battle = await _dbContext.Battles
             .FirstOrDefaultAsync(b => b.BattleId == command.BattleId, context.CancellationToken);
 
         if (battle == null)
         {
             _logger.LogWarning(
-                "Battle {BattleId} not found, skipping EndBattle (idempotent behavior)",
-                command.BattleId);
-            // ACK without side effects
+                "Battle {BattleId} not found in read model for EndBattle command. " +
+                "This is idempotent - battle may exist only in Redis. MessageId: {MessageId}",
+                command.BattleId, context.MessageId);
+            // ACK without side effects (battle may exist in Redis but not in DB read model)
             return;
         }
 
-        // Idempotency check: if battle already ended, do not process again
-        if (battle.State == "Ended" || battle.EndedAt != null)
+        // Idempotency check: if battle already ended, do not publish duplicate BattleEnded
+        if (battle.State == "Ended" && battle.EndedAt != null)
         {
             _logger.LogInformation(
-                "Battle {BattleId} already ended, skipping EndBattle (idempotent behavior)",
-                command.BattleId);
+                "Battle {BattleId} already ended, skipping EndBattle command (idempotent behavior). " +
+                "Existing: Reason={ExistingReason}, EndedAt={ExistingEndedAt}, MessageId: {MessageId}",
+                command.BattleId, battle.EndReason, battle.EndedAt, context.MessageId);
             // ACK without publishing duplicate events
             return;
         }
 
-        // Update battle state
-        battle.State = "Ended";
-        battle.EndedAt = DateTime.UtcNow;
-        battle.EndReason = command.Reason.ToString();
-
         // Determine WinnerPlayerId based on reason
-        battle.WinnerPlayerId = DetermineWinner(command.Reason);
+        var winnerPlayerId = DetermineWinner(command.Reason);
 
-        // Save changes
-        await _dbContext.SaveChangesAsync(context.CancellationToken);
-
-        // Publish BattleEnded event
+        // Publish BattleEnded event (canonical termination event)
+        // DB update will be handled by BattleEndedProjectionConsumer
         var battleEnded = new BattleEnded
         {
-            BattleId = battle.BattleId,
-            MatchId = battle.MatchId,
+            BattleId = command.BattleId,
+            MatchId = command.MatchId,
             Reason = command.Reason,
-            WinnerPlayerId = battle.WinnerPlayerId,
-            EndedAt = battle.EndedAt.Value,
+            WinnerPlayerId = winnerPlayerId,
+            EndedAt = DateTime.UtcNow, // Use current time as authoritative ended timestamp
             Version = 1
         };
 
         // Publish via ConsumeContext to ensure outbox integration
         await context.Publish(battleEnded, context.CancellationToken);
 
-        // Save changes again for outbox
-        await _dbContext.SaveChangesAsync(context.CancellationToken);
-
         _logger.LogInformation(
-            "Successfully ended battle {BattleId} and published BattleEnded event",
-            command.BattleId);
+            "Published BattleEnded event for BattleId: {BattleId}, Reason: {Reason}, WinnerPlayerId: {WinnerPlayerId}. " +
+            "DB update will be handled by BattleEndedProjectionConsumer. MessageId: {MessageId}",
+            command.BattleId, command.Reason, winnerPlayerId, context.MessageId);
     }
 
     private static Guid? DetermineWinner(BattleEndReason reason)

@@ -101,7 +101,9 @@ public class BattleHub : Hub
             NoActionStreakBoth = state.NoActionStreakBoth,
             LastResolvedTurnIndex = state.LastResolvedTurnIndex,
             EndedReason = endedReason,
-            Version = state.Version
+            Version = state.Version,
+            PlayerAHp = state.PlayerAHp,
+            PlayerBHp = state.PlayerBHp
         };
     }
 

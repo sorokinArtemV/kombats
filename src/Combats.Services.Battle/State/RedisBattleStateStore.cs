@@ -364,4 +364,43 @@ public class RedisBattleStateStore : IBattleStateStore
             actionB.HasValue ? actionB.ToString() : null
         );
     }
+
+    public async Task<bool> UpdatePlayerHpAsync(Guid battleId, int playerAHp, int playerBHp, CancellationToken cancellationToken = default)
+    {
+        var db = _redis.GetDatabase();
+        var key = GetStateKey(battleId);
+
+        // Atomically update HP values
+        const string script = @"
+            local stateJson = redis.call('GET', KEYS[1])
+            if not stateJson then
+                return 0
+            end
+            local state = cjson.decode(stateJson)
+            -- Only update if battle not ended
+            if state.Phase == 3 then
+                return 0
+            end
+            state.PlayerAHp = tonumber(ARGV[1])
+            state.PlayerBHp = tonumber(ARGV[2])
+            state.Version = state.Version + 1
+            redis.call('SET', KEYS[1], cjson.encode(state))
+            return 1
+        ";
+
+        var result = await db.ScriptEvaluateAsync(
+            script,
+            new RedisKey[] { key },
+            new RedisValue[] { playerAHp, playerBHp });
+
+        var success = (int)result == 1;
+        if (success)
+        {
+            _logger.LogInformation(
+                "Updated HP for BattleId: {BattleId}, PlayerA: {PlayerAHp}, PlayerB: {PlayerBHp}",
+                battleId, playerAHp, playerBHp);
+        }
+
+        return success;
+    }
 }
