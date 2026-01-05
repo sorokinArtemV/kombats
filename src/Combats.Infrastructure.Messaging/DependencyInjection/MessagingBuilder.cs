@@ -23,11 +23,9 @@ public class MessagingBuilder
     /// <typeparam name="T">Message type (command or event)</typeparam>
     /// <param name="logicalKey">Logical key (e.g., "CreateBattle", "BattleCreated")</param>
     /// <returns>Builder for method chaining</returns>
-    public MessagingBuilder Map<T>(string logicalKey)
-        where T : class
+    public void Map<T>(string logicalKey) where T : class
     {
         _logicalKeyMap[typeof(T)] = logicalKey;
-        return this;
     }
 
     /// <summary>
@@ -37,8 +35,7 @@ public class MessagingBuilder
     /// <typeparam name="T">Message type</typeparam>
     /// <param name="entityName">Entity name (e.g., "battle.create-battle")</param>
     /// <returns>Builder for method chaining</returns>
-    public MessagingBuilder MapEntityName<T>(string entityName)
-        where T : class
+    public MessagingBuilder MapEntityName<T>(string entityName) where T : class
     {
         _logicalKeyMap[typeof(T)] = entityName; // Store as both logical key and entity name
         return this;

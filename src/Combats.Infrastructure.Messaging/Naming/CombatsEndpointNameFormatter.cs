@@ -2,13 +2,13 @@
 
 namespace Combats.Infrastructure.Messaging.Naming;
 
-public class KebabCaseEndpointNameFormatter : IEndpointNameFormatter
+public class CombatsEndpointNameFormatter : IEndpointNameFormatter
 {
     private readonly string _serviceName;
     private readonly bool _includeNamespace;
     private readonly EntityNameConvention? _entityNameFormatter;
 
-    public KebabCaseEndpointNameFormatter(
+    public CombatsEndpointNameFormatter(
         string serviceName, 
         bool includeNamespace = false,
         EntityNameConvention? entityNameFormatter = null)

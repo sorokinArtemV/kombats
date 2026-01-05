@@ -4,8 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Combats.Infrastructure.Messaging.Filters;
 
-public class ConsumeLoggingFilter<T> : IFilter<ConsumeContext<T>>
-    where T : class
+public class ConsumeLoggingFilter<T> : IFilter<ConsumeContext<T>> where T : class
 {
     private readonly ILogger<ConsumeLoggingFilter<T>> _logger;
 

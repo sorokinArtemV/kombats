@@ -8,7 +8,6 @@ using Combats.Infrastructure.Messaging.Filters;
 using Combats.Infrastructure.Messaging.Inbox;
 using Combats.Infrastructure.Messaging.Naming;
 using Combats.Infrastructure.Messaging.Options;
-using KebabCaseEndpointNameFormatter = Combats.Infrastructure.Messaging.Naming.KebabCaseEndpointNameFormatter;
 
 namespace Combats.Infrastructure.Messaging.DependencyInjection;
 
@@ -38,6 +37,7 @@ public static class MessagingServiceCollectionExtensions
         services.Configure<MessagingOptions>(messagingSection);
         services.AddOptions<MessagingOptions>().Bind(messagingSection).ValidateOnStart();
 
+        // local copy for instant checks and validation
         var options = new MessagingOptions();
         messagingSection.Bind(options);
         if (string.IsNullOrWhiteSpace(options.RabbitMq.Host))
@@ -293,7 +293,7 @@ public static class MessagingServiceCollectionExtensions
                 // NOTE: ConfigureEndpoints filter parameter (e => { ... }) receives RegistrationFilterConfigurator,
                 // NOT IReceiveEndpointConfigurator. It cannot be used for endpoint middleware like UseEntityFrameworkOutbox.
                 // Outbox must be configured via x.AddEntityFrameworkOutbox<TDbContext>() in AddMassTransit registration.
-                var endpointFormatter = new KebabCaseEndpointNameFormatter(
+                var endpointFormatter = new CombatsEndpointNameFormatter(
                     serviceName,
                     false,
                     entityNameFormatter);
@@ -412,7 +412,7 @@ public static class MessagingServiceCollectionExtensions
                 // NOTE: ConfigureEndpoints filter parameter (e => { ... }) receives RegistrationFilterConfigurator,
                 // NOT IReceiveEndpointConfigurator. It cannot be used for endpoint middleware like UseEntityFrameworkOutbox.
                 // Outbox must be configured via x.AddEntityFrameworkOutbox<TDbContext>() in AddMassTransit registration.
-                var endpointFormatter = new KebabCaseEndpointNameFormatter(
+                var endpointFormatter = new CombatsEndpointNameFormatter(
                     serviceName,
                     false,
                     entityNameFormatter);
