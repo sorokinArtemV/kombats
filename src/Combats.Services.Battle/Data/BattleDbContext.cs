@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using Combats.Infrastructure.Messaging.Inbox;
 using Combats.Services.Battle.Entities;
+using MassTransit;
 
 namespace Combats.Services.Battle.Data;
 
@@ -11,7 +11,6 @@ public class BattleDbContext : DbContext
     }
 
     public DbSet<BattleEntity> Battles { get; set; } = null!;
-    public DbSet<InboxMessage> InboxMessages { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,9 +31,10 @@ public class BattleDbContext : DbContext
             entity.Property(e => e.WinnerPlayerId).IsRequired(false);
             entity.HasIndex(e => e.MatchId);
         });
-
-        // Configure inbox entity
-        modelBuilder.Entity<InboxMessage>(entity => entity.ConfigureInboxMessage());
+        
+        modelBuilder.AddInboxStateEntity();      // InboxState
+        modelBuilder.AddOutboxMessageEntity();   // OutboxMessage
+        modelBuilder.AddOutboxStateEntity();     // OutboxState
     }
 }
 

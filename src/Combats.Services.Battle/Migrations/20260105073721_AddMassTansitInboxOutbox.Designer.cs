@@ -3,6 +3,7 @@ using System;
 using Combats.Services.Battle.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Combats.Services.Battle.Migrations
 {
     [DbContext(typeof(BattleDbContext))]
-    partial class BattleDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260105073721_AddMassTansitInboxOutbox")]
+    partial class AddMassTansitInboxOutbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
