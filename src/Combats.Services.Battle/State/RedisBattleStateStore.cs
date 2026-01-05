@@ -24,7 +24,8 @@ public class RedisBattleStateStore : IBattleStateStore
     }
 
     private string GetStateKey(Guid battleId) => $"{StateKeyPrefix}{battleId}";
-    private string GetActionKey(Guid battleId, int turnIndex, Guid playerId) => $"{ActionKeyPrefix}{battleId}:turn:{turnIndex}:player:{playerId}";
+    private string GetActionKey(Guid battleId, int turnIndex, Guid playerId) => 
+        $"{ActionKeyPrefix}{battleId}:turn:{turnIndex}:player:{playerId}";
 
     public async Task<bool> TryInitializeBattleAsync(Guid battleId, BattleState initialState, CancellationToken cancellationToken = default)
     {
@@ -59,8 +60,7 @@ public class RedisBattleStateStore : IBattleStateStore
         var key = GetStateKey(battleId);
         RedisValue json = await db.StringGetAsync(key);
 
-        if (!json.HasValue)
-            return null;
+        if (!json.HasValue) return null;
 
         try
         {
@@ -120,8 +120,8 @@ public class RedisBattleStateStore : IBattleStateStore
 
         var result = await db.ScriptEvaluateAsync(
             script,
-            new RedisKey[] { key },
-            new RedisValue[] { turnIndex, deadlineTicks });
+            [key],
+            [turnIndex, deadlineTicks]);
 
         var success = (int)result == 1;
         if (success)
@@ -159,8 +159,8 @@ public class RedisBattleStateStore : IBattleStateStore
 
         var result = await db.ScriptEvaluateAsync(
             script,
-            new RedisKey[] { key },
-            new RedisValue[] { turnIndex });
+            [key],
+            [turnIndex]);
 
         var success = (int)result == 1;
         if (success)
@@ -212,8 +212,8 @@ public class RedisBattleStateStore : IBattleStateStore
 
         var result = await db.ScriptEvaluateAsync(
             script,
-            new RedisKey[] { key },
-            new RedisValue[] { currentTurnIndex, nextTurnIndex, deadlineTicks, noActionStreak });
+            [key],
+            [currentTurnIndex, nextTurnIndex, deadlineTicks, noActionStreak]);
 
         var success = (int)result == 1;
         if (success)
@@ -404,3 +404,270 @@ public class RedisBattleStateStore : IBattleStateStore
         return success;
     }
 }
+
+/*
+PROMPT FOR CURSOR — REFACTOR TURN LOOP (VARIANT B)
+Контекст проекта
+
+Ты работаешь в .NET (ASP.NET) микросервисе Battle / Game Engine для онлайн PvP 1x1 игры (в духе combats.ru).
+
+Текущая архитектура:
+
+Authoritative battle state — Redis.
+
+Межсервисное взаимодействие — RabbitMQ + MassTransit.
+
+Используется transactional outbox + inbox (EF + Postgres).
+
+Ввод игрока — через SignalR.
+
+Бой пошаговый, но delivery realtime.
+
+TURN_SECONDS = 10.
+
+Игрок, не приславший валидное действие до дедлайна, получает NoAction.
+
+Сервер полностью авторитарный.
+
+Redis уже содержит Lua/CAS-методы для:
+
+TryOpenTurn
+
+TryMarkTurnResolving
+
+MarkTurnResolvedAndOpenNext
+
+EndBattleAndMarkResolved
+
+Текущая проблема
+
+Сейчас каждый ход (ResolveTurn) реализован через:
+
+MassTransit message + scheduler,
+
+consumer ResolveTurn,
+
+watchdog, который рескейджулит пропущенные тики.
+
+Это приводит к тому, что каждый ход создаёт записи в:
+
+InboxState
+
+OutboxMessage
+
+OutboxState
+
+При большом количестве боёв это создаёт write-amplification в Postgres и является архитектурно неверным для high-frequency turn loop, где authoritative state уже в Redis.
+
+Цель рефактора
+
+Полностью убрать turn loop из RabbitMQ / MassTransit, и реализовать его как внутренний deadline-driven workflow Battle-сервиса, используя Redis как:
+
+state store,
+
+источник дедлайнов (через ZSET).
+
+MQ + outbox/inbox должны остаться только для:
+
+CreateBattle / EndBattle команд,
+
+BattleCreated / BattleEnded событий,
+
+projection consumers (если есть).
+
+Архитектурное решение (ОБЯЗАТЕЛЬНО СОБЛЮДАТЬ)
+1. УБРАТЬ ИЗ TURN LOOP
+
+Полностью удалить использование IMessageScheduler для ResolveTurn.
+
+Удалить очередь ResolveTurn.
+
+Удалить ResolveTurnConsumer.
+
+Удалить BattleWatchdogService целиком.
+
+Turn loop НЕ ДОЛЖЕН использовать MassTransit, RabbitMQ или Postgres.
+
+2. ДОБАВИТЬ REDIS DEADLINE INDEX
+
+Добавить Redis Sorted Set:
+
+Key: battle:deadlines
+
+Member: {battleId}
+
+Score: deadlineUtcTicks (long)
+
+Этот ZSET — единственный источник правды, какие бои требуют резолва.
+
+3. ИЗМЕНИТЬ OPEN TURN ЛОГИКУ
+
+При открытии хода:
+
+Установить в battle state:
+
+Phase = TurnOpen
+
+DeadlineUtcTicks = now + TURN_SECONDS
+
+Добавить/обновить запись в Redis ZSET:
+
+ZADD battle:deadlines deadlineTicks battleId
+
+
+Использовать существующий RedisBattleStateStore и Lua/CAS-инварианты.
+
+4. ДОБАВИТЬ BACKGROUND WORKER
+
+Добавить TurnDeadlineWorker : BackgroundService в Battle-сервисе.
+
+Поведение воркера:
+
+Работает постоянно.
+
+Периодически (например, каждые 200–500 мс):
+
+Берёт due battles:
+
+ZRANGEBYSCORE battle:deadlines -inf now LIMIT 0 N
+
+
+Для каждого battleId:
+
+Пытается атомарно перевести бой:
+
+TurnOpen → Resolving
+
+
+используя TryMarkTurnResolvingAsync.
+
+Если не получилось — пропустить (кто-то другой обработал).
+
+Загружает действия игроков текущего хода.
+
+Применяет правила:
+
+отсутствует/невалидно → NoAction
+
+ведёт NoAction streak
+
+Если бой продолжается:
+
+вызвать MarkTurnResolvedAndOpenNextAsync
+
+вычислить новый дедлайн
+
+ZADD battle:deadlines newDeadline battleId
+
+Если бой завершён:
+
+вызвать EndBattleAndMarkResolvedAsync
+
+ZREM battle:deadlines battleId
+
+один раз опубликовать BattleEnded через MassTransit (outbox допустим).
+
+4.5 EARLY TURN RESOLUTION (ОБЯЗАТЕЛЬНО)
+
+Turn resolution НЕ ДОЛЖЕН всегда ждать истечения дедлайна.
+
+Если оба игрока прислали валидные действия до дедлайна:
+
+SignalR SubmitAction handler обязан попытаться немедленно резолвить ход.
+
+Для раннего резолва:
+
+используется тот же Redis CAS-метод TryMarkTurnResolving.
+
+если CAS успешен:
+
+немедленно выполняется полный turn resolve,
+
+battleId удаляется из battle:deadlines,
+
+открывается следующий ход и ставится новый дедлайн.
+
+если CAS неуспешен:
+
+handler делает no-op (ход уже резолвится кем-то другим).
+
+TurnDeadlineWorker рассматривается исключительно как fallback для случаев:
+
+истёк дедлайн,
+
+игрок не прислал действие,
+
+игрок отключился,
+
+сервис перезапускался.
+
+5. ИНВАРИАНТЫ (ОБЯЗАТЕЛЬНЫ)
+
+Один и только один резолв на ход (обеспечивается Redis CAS).
+
+Повторный резолв одного и того же turnIndex безопасен (no-op).
+
+Потеря/дублирование воркера не приводит к двойному урону.
+
+Turn loop НЕ ПИШЕТ в Postgres.
+
+Inbox/Outbox НЕ АКТИВИРУЮТСЯ для тиков.
+
+ЧТО ОСТАВИТЬ БЕЗ ИЗМЕНЕНИЙ
+
+CreateBattleConsumer
+
+EndBattleConsumer
+
+BattleCreated / BattleEnded события
+
+RedisBattleStateStore и Lua-методы (использовать повторно)
+
+SignalR API для ввода действий игроков
+
+Transactional outbox/inbox для межсервисных команд и событий
+
+КРИТЕРИИ ГОТОВНОСТИ (DEFINITION OF DONE)
+
+ResolveTurn не существует как сообщение/consumer/очередь.
+
+BattleWatchdogService удалён.
+
+Turn loop работает без RabbitMQ.
+
+При 1000 активных боёв:
+
+InboxState / Outbox* не растут от тиков.
+
+Redis содержит ZSET battle:deadlines с ожидаемым размером.
+
+Бой корректно:
+
+резолвит ходы по дедлайну,
+
+применяет NoAction,
+
+завершает бой по DoubleForfeit,
+
+допускает реконнект игрока.
+
+BattleEnded публикуется ровно один раз.
+
+ДОПОЛНИТЕЛЬНО (ЖЕЛАТЕЛЬНО)
+
+Добавить метрики:
+
+размер battle:deadlines
+
+lateness = now - deadline
+
+turns resolved / sec
+
+Логирование только на transitions, не на каждый тик.
+
+Важно:
+Не упрощай архитектуру.
+Не добавляй синхронные HTTP-вызовы между сервисами.
+Не перемещай battle state в Postgres.
+Не возвращай scheduler/consumer для turn loop.
+*/
