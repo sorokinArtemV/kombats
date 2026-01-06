@@ -1,7 +1,6 @@
+using Combats.Battle.Api.Contracts.SignalR;
 using Combats.Battle.Application.Ports;
-using Combats.Battle.Application.Services;
-using Combats.Battle.Infrastructure.Realtime;
-using Combats.Battle.Infrastructure.Realtime.DTOs;
+using Combats.Battle.Application.UseCases;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
@@ -11,10 +10,9 @@ namespace Combats.Battle.Api.Hubs;
 /// <summary>
 /// SignalR hub for battle operations.
 /// Thin adapter that delegates to Application services.
-/// Extends Infrastructure BattleHub.
 /// </summary>
 [Authorize]
-public class BattleHub : Infrastructure.Realtime.BattleHub
+public class BattleHub : Hub
 {
     private readonly IBattleStateStore _stateStore;
     private readonly BattleTurnAppService _turnAppService;

@@ -1,5 +1,5 @@
 using Combats.Battle.Application.Ports;
-using Combats.Battle.Application.Services;
+using Combats.Battle.Application.UseCases;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

@@ -1,16 +1,22 @@
 using Combats.Battle.Application.Ports;
-using Combats.Battle.Application.Services;
+using Combats.Battle.Application.UseCases;
+using Combats.Battle.Application.Validation;
 using Combats.Battle.Api.Hubs;
 using Combats.Battle.Api.Middleware;
+using Combats.Battle.Api.Realtime;
+using Combats.Battle.Infrastructure.Realtime.SignalR;
+using Microsoft.AspNetCore.SignalR;
 using Combats.Battle.Api.Workers;
 using Combats.Battle.Domain;
-using Combats.Battle.Infrastructure.Consumers;
-using Combats.Battle.Infrastructure.Data;
-using Combats.Battle.Infrastructure.Events;
+using Combats.Battle.Domain.Engine;
+using Combats.Battle.Infrastructure.Messaging.Consumers;
+using Combats.Battle.Infrastructure.Messaging;
+using MassTransitBattleEventPublisher = Combats.Battle.Infrastructure.Messaging.Publisher.MassTransitBattleEventPublisher;
+using Combats.Battle.Infrastructure.Persistence.EF;
+using Combats.Battle.Infrastructure.Persistence.EF.DbContext;
+using Combats.Battle.Infrastructure.Persistence.EF.Projections;
 using Combats.Battle.Infrastructure.Profiles;
-using Combats.Battle.Infrastructure.Projections;
-using Combats.Battle.Infrastructure.Realtime;
-using Combats.Battle.Infrastructure.State;
+using Combats.Battle.Infrastructure.State.Redis;
 using Combats.Battle.Infrastructure.Time;
 using Combats.Infrastructure.Messaging.DependencyInjection;
 using Combats.Contracts.Battle;
@@ -52,7 +58,14 @@ builder.Services.AddScoped<IBattleEngine, BattleEngine>();
 
 // Register Application ports (implemented by Infrastructure)
 builder.Services.AddScoped<IBattleStateStore, RedisBattleStateStore>();
-builder.Services.AddScoped<IBattleRealtimeNotifier, SignalRBattleRealtimeNotifier>();
+// SignalRBattleRealtimeNotifier uses IHubContext<Hub> - provide adapter from IHubContext<BattleHub>
+builder.Services.AddScoped<IBattleRealtimeNotifier>(sp =>
+{
+    var battleHubContext = sp.GetRequiredService<IHubContext<BattleHub>>();
+    var hubContext = new HubContextAdapter(battleHubContext);
+    var logger = sp.GetRequiredService<ILogger<SignalRBattleRealtimeNotifier>>();
+    return new SignalRBattleRealtimeNotifier(hubContext, logger);
+});
 builder.Services.AddScoped<IBattleEventPublisher, MassTransitBattleEventPublisher>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<ICombatProfileProvider, DatabaseCombatProfileProvider>();
@@ -72,7 +85,6 @@ builder.Services.AddMessaging<BattleDbContext>(
     x =>
     {
         x.AddConsumer<CreateBattleConsumer>();
-        x.AddConsumer<BattleCreatedEngineConsumer>();
         x.AddConsumer<EndBattleConsumer>();
         x.AddConsumer<BattleEndedProjectionConsumer>();
     },
@@ -80,6 +92,7 @@ builder.Services.AddMessaging<BattleDbContext>(
     {
         // Register entity name mappings (logical keys -> resolved from configuration)
         messagingBuilder.Map<CreateBattle>("CreateBattle");
+        // BattleCreated is published but not consumed internally (state initialization done directly in CreateBattleConsumer)
         messagingBuilder.Map<BattleCreated>("BattleCreated");
         messagingBuilder.Map<EndBattle>("EndBattle");
         messagingBuilder.Map<BattleEnded>("BattleEnded");

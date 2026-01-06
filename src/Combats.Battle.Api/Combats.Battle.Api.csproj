@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Combats.Battle.Application\Combats.Battle.Application.csproj" />
+    <ProjectReference Include="..\Combats.Battle.Api.Contracts\Combats.Battle.Api.Contracts.csproj" />
     <ProjectReference Include="..\Combats.Battle.Domain\Combats.Battle.Domain.csproj" />
     <ProjectReference Include="..\Combats.Battle.Infrastructure\Combats.Battle.Infrastructure.csproj" />
     <ProjectReference Include="..\Combats.Contracts\Combats.Contracts.csproj" />

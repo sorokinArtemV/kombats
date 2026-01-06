@@ -6,3 +6,4 @@ namespace Combats.Battle.Application.Ports;
 // Application layer uses Contracts types directly
 
 
+
