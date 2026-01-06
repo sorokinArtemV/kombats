@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,30 +12,6 @@ namespace Combats.Battle.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.CreateTable(
-                name: "battles",
-                columns: table => new
-                {
-                    BattleId = table.Column<Guid>(type: "uuid", nullable: false),
-                    MatchId = table.Column<Guid>(type: "uuid", nullable: false),
-                    PlayerAId = table.Column<Guid>(type: "uuid", nullable: false),
-                    PlayerBId = table.Column<Guid>(type: "uuid", nullable: false),
-                    State = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    EndedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    EndReason = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    WinnerPlayerId = table.Column<Guid>(type: "uuid", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_battles", x => x.BattleId);
-                });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_battles_MatchId",
-                table: "battles",
-                column: "MatchId");
-
             migrationBuilder.CreateTable(
                 name: "InboxState",
                 columns: table => new
@@ -161,11 +137,6 @@ namespace Combats.Battle.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "OutboxState");
-
-            migrationBuilder.DropTable(
-                name: "battles");
         }
     }
 }
-
-
