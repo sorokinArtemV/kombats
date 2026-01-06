@@ -1,7 +1,6 @@
 using MassTransit;
 using Combats.Contracts.Battle;
 using Combats.Services.Battle.State;
-using Combats.Services.Battle.Constants;
 using Combats.Services.Battle.DTOs;
 using Combats.Services.Battle.Hubs;
 using Microsoft.AspNetCore.SignalR;
@@ -12,18 +11,15 @@ public class BattleCreatedEngineConsumer : IConsumer<BattleCreated>
 {
     private readonly IBattleStateStore _stateStore;
     private readonly IHubContext<BattleHub> _hubContext;
-    private readonly IMessageScheduler _messageScheduler;
     private readonly ILogger<BattleCreatedEngineConsumer> _logger;
 
     public BattleCreatedEngineConsumer(
         IBattleStateStore stateStore,
         IHubContext<BattleHub> hubContext,
-        IMessageScheduler messageScheduler,
         ILogger<BattleCreatedEngineConsumer> logger)
     {
         _stateStore = stateStore;
         _hubContext = hubContext;
-        _messageScheduler = messageScheduler;
         _logger = logger;
     }
 
@@ -115,38 +111,9 @@ public class BattleCreatedEngineConsumer : IConsumer<BattleCreated>
             DeadlineUtc = authoritativeDeadline.ToUniversalTime().ToString("O")
         }, context.CancellationToken);
 
-        // Schedule ResolveTurn command for Turn 1 at authoritative deadline
-        var resolveTurnCommand = new ResolveTurn(battleId, 1);
-
-        try
-        {
-            // Schedule using message scheduler to dedicated queue
-            // IMessageScheduler.ScheduleSend doesn't support pipe configuration.
-            // We use the scheduler directly - CorrelationId and MessageId will be set via message initialization.
-            // Note: MassTransit will auto-generate MessageId if not set, and CorrelationId can be set via message context.
-            await _messageScheduler.ScheduleSend(
-                new Uri($"queue:{BattleQueues.ResolveTurn}"),
-                authoritativeDeadline,
-                resolveTurnCommand,
-                context.CancellationToken);
-            
-            // Note: MassTransit auto-generates MessageId. CorrelationId should be battleId for observability.
-            // For explicit control, we'd need to use ISendEndpointProvider with custom message initialization,
-            // but IMessageScheduler.ScheduleSend is the recommended approach for delayed messages.
-
-            // Mark as scheduled in state (for watchdog recovery)
-            await _stateStore.MarkResolveScheduledAsync(battleId, authoritativeDeadline, context.CancellationToken);
-
-            _logger.LogInformation(
-                "Battle {BattleId} initialized and Turn 1 opened. ResolveTurn scheduled for {DeadlineUtc} to queue {Queue}, CorrelationId: {CorrelationId}",
-                battleId, authoritativeDeadline, BattleQueues.ResolveTurn, battleId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex,
-                "Failed to schedule ResolveTurn for BattleId: {BattleId}, TurnIndex: 1. Watchdog will recover.",
-                battleId);
-            // Don't throw - watchdog will recover missing schedules
-        }
+        // Note: TryOpenTurnAsync already added battle to deadlines ZSET, so TurnDeadlineWorker will handle resolution
+        _logger.LogInformation(
+            "Battle {BattleId} initialized and Turn 1 opened. Deadline: {DeadlineUtc}. TurnDeadlineWorker will resolve at deadline.",
+            battleId, authoritativeDeadline);
     }
 }

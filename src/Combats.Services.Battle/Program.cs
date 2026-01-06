@@ -45,6 +45,9 @@ builder.Services.AddScoped<IBattleStateStore, RedisBattleStateStore>();
 // Register Battle Engine (domain layer)
 builder.Services.AddScoped<Combats.Services.Battle.Domain.IBattleEngine, Combats.Services.Battle.Domain.BattleEngine>();
 
+// Register Turn Resolver Service
+builder.Services.AddScoped<TurnResolverService>();
+
 // Configure SignalR
 builder.Services.AddSignalR();
 
@@ -56,7 +59,6 @@ builder.Services.AddMessaging<BattleDbContext>(
     {
         x.AddConsumer<CreateBattleConsumer>();
         x.AddConsumer<BattleCreatedEngineConsumer>();
-        x.AddConsumer<ResolveTurnConsumer>();
         x.AddConsumer<EndBattleConsumer>();
         x.AddConsumer<BattleEndedProjectionConsumer>();
     },
@@ -65,13 +67,12 @@ builder.Services.AddMessaging<BattleDbContext>(
         // Register entity name mappings (logical keys -> resolved from configuration)
         messagingBuilder.Map<CreateBattle>("CreateBattle");
         messagingBuilder.Map<BattleCreated>("BattleCreated");
-        messagingBuilder.Map<ResolveTurn>("ResolveTurn");
         messagingBuilder.Map<EndBattle>("EndBattle");
         messagingBuilder.Map<BattleEnded>("BattleEnded");
     });
 
-// Register watchdog service (background service for recovering missing ResolveTurn schedules)
-builder.Services.AddHostedService<BattleWatchdogService>();
+// Register turn deadline worker (background service for deadline-driven turn resolution)
+builder.Services.AddHostedService<TurnDeadlineWorker>();
 
 var app = builder.Build();
 

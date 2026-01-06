@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using Combats.Services.Battle.State;
 using Combats.Services.Battle.DTOs;
+using Combats.Services.Battle.Services;
 using Combats.Contracts.Battle;
 
 namespace Combats.Services.Battle.Hubs;
@@ -12,13 +13,16 @@ namespace Combats.Services.Battle.Hubs;
 public class BattleHub : Hub
 {
     private readonly IBattleStateStore _stateStore;
+    private readonly TurnResolverService _turnResolver;
     private readonly ILogger<BattleHub> _logger;
 
     public BattleHub(
         IBattleStateStore stateStore,
+        TurnResolverService turnResolver,
         ILogger<BattleHub> logger)
     {
         _stateStore = stateStore;
+        _turnResolver = turnResolver;
         _logger = logger;
     }
 
@@ -247,6 +251,46 @@ public class BattleHub : Hub
             _logger.LogInformation(
                 "Action stored for BattleId: {BattleId}, TurnIndex: {TurnIndex}, UserId: {UserId}",
                 battleId, currentServerTurnIndex, userId);
+        }
+
+        // Early turn resolution: if both players have submitted actions, try to resolve immediately
+        // This is a best-effort optimization - if CAS fails, the deadline worker will handle it
+        try
+        {
+            // Check if both players have actions stored
+            var (playerAAction, playerBAction) = await _stateStore.GetActionsAsync(
+                battleId,
+                currentServerTurnIndex,
+                state.PlayerAId,
+                state.PlayerBId);
+
+            // Both actions are present (even if empty/NoAction)
+            if (playerAAction != null && playerBAction != null)
+            {
+                // Try to resolve the turn immediately
+                // TurnResolverService uses CAS (TryMarkTurnResolvingAsync) to ensure only one resolution happens
+                var resolved = await _turnResolver.ResolveTurnAsync(battleId, currentServerTurnIndex);
+                
+                if (resolved)
+                {
+                    _logger.LogInformation(
+                        "Early turn resolution successful for BattleId: {BattleId}, TurnIndex: {TurnIndex}",
+                        battleId, currentServerTurnIndex);
+                }
+                // If resolved == false, either:
+                // - Turn was already being resolved by deadline worker
+                // - Turn was already resolved
+                // - Invalid state
+                // This is fine - no-op, deadline worker will handle it if needed
+            }
+        }
+        catch (Exception ex)
+        {
+            // Don't fail the action submission if early resolution fails
+            // Deadline worker will handle it
+            _logger.LogWarning(ex,
+                "Early turn resolution failed for BattleId: {BattleId}, TurnIndex: {TurnIndex}. Deadline worker will handle it.",
+                battleId, currentServerTurnIndex);
         }
     }
 

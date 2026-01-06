@@ -16,7 +16,8 @@ public class BattleState
     public long DeadlineUtcTicks { get; set; }
     
     [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
-    public long NextResolveScheduledUtcTicks { get; set; } // Tracks when ResolveTurn was last scheduled (for watchdog recovery)
+    [Obsolete("No longer used - deadlines are tracked in Redis ZSET (battle:deadlines)")]
+    public long NextResolveScheduledUtcTicks { get; set; } // Deprecated: kept for backward compatibility with existing Redis data
     public int NoActionStreakBoth { get; set; }
     public int LastResolvedTurnIndex { get; set; }
     public Guid MatchId { get; set; } // Store MatchId for BattleEnded event
@@ -40,6 +41,7 @@ public class BattleState
         DeadlineUtcTicks = deadlineUtc.ToUniversalTime().Ticks;
     }
 
+    [Obsolete("No longer used - deadlines are tracked in Redis ZSET (battle:deadlines)")]
     public DateTime? GetNextResolveScheduledUtc()
     {
         return NextResolveScheduledUtcTicks > 0 
@@ -47,6 +49,7 @@ public class BattleState
             : null;
     }
 
+    [Obsolete("No longer used - deadlines are tracked in Redis ZSET (battle:deadlines)")]
     public void SetNextResolveScheduledUtc(DateTime scheduledUtc)
     {
         NextResolveScheduledUtcTicks = scheduledUtc.ToUniversalTime().Ticks;
