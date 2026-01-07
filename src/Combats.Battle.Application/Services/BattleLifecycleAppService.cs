@@ -1,4 +1,5 @@
 using Combats.Battle.Application.Ports;
+using Combats.Battle.Application.Rules;
 using Combats.Contracts.Battle;
 using Microsoft.Extensions.Logging;
 
@@ -14,6 +15,7 @@ public class BattleLifecycleAppService
     private readonly IBattleRealtimeNotifier _notifier;
     private readonly ICombatProfileProvider _profileProvider;
     private readonly IClock _clock;
+    private readonly RulesetNormalizer _rulesetNormalizer;
     private readonly ILogger<BattleLifecycleAppService> _logger;
 
     public BattleLifecycleAppService(
@@ -21,12 +23,14 @@ public class BattleLifecycleAppService
         IBattleRealtimeNotifier notifier,
         ICombatProfileProvider profileProvider,
         IClock clock,
+        RulesetNormalizer rulesetNormalizer,
         ILogger<BattleLifecycleAppService> logger)
     {
         _stateStore = stateStore;
         _notifier = notifier;
         _profileProvider = profileProvider;
         _clock = clock;
+        _rulesetNormalizer = rulesetNormalizer;
         _logger = logger;
     }
 
@@ -46,13 +50,17 @@ public class BattleLifecycleAppService
         var profileA = await _profileProvider.GetProfileAsync(message.PlayerAId, cancellationToken);
         var profileB = await _profileProvider.GetProfileAsync(message.PlayerBId, cancellationToken);
 
+        // Normalize ruleset (applies defaults and enforces bounds) - single source of truth
+        var normalizedRuleset = _rulesetNormalizer.Normalize(message.Ruleset);
+
         // Use defaults if profile not found (should not happen, but defensive)
         var strengthA = profileA?.Strength ?? 10;
         var staminaA = profileA?.Stamina ?? 10;
         var strengthB = profileB?.Strength ?? 10;
         var staminaB = profileB?.Stamina ?? 10;
 
-        var hpPerStamina = message.Ruleset.HpPerStamina > 0 ? message.Ruleset.HpPerStamina : 10;
+        // Use normalized ruleset for HP calculation
+        var hpPerStamina = normalizedRuleset.HpPerStamina;
         var initialMaxHpA = staminaA * hpPerStamina;
         var initialMaxHpB = staminaB * hpPerStamina;
 
@@ -62,7 +70,7 @@ public class BattleLifecycleAppService
             MatchId = message.MatchId,
             PlayerAId = message.PlayerAId,
             PlayerBId = message.PlayerBId,
-            Ruleset = message.Ruleset,
+            Ruleset = normalizedRuleset,
             Phase = BattlePhaseView.ArenaOpen,
             TurnIndex = 0,
             DeadlineUtc = _clock.UtcNow, // ArenaOpen deadline is meaningless but consistent
@@ -87,8 +95,8 @@ public class BattleLifecycleAppService
             return;
         }
 
-        // Open Turn 1
-        var turnSeconds = message.Ruleset.TurnSeconds;
+        // Open Turn 1 - use normalized ruleset
+        var turnSeconds = normalizedRuleset.TurnSeconds;
         var turn1Deadline = _clock.UtcNow.AddSeconds(turnSeconds);
 
         var turnOpened = await _stateStore.TryOpenTurnAsync(battleId, 1, turn1Deadline, cancellationToken);

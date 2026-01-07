@@ -1,6 +1,6 @@
 using Combats.Battle.Application.Ports;
 using Combats.Battle.Application.Services;
-using Combats.Battle.Application.Validation;
+using Combats.Battle.Application.Protocol;
 using Combats.Battle.Domain.Engine;
 using Combats.Battle.Domain.Events;
 using Combats.Battle.Domain.Model;

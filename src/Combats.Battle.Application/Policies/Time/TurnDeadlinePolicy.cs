@@ -1,6 +1,4 @@
-using System;
-
-namespace Combats.Battle.Application.Services;
+namespace Combats.Battle.Application.Policies.Time;
 
 /// <summary>
 /// Pure predicate that decides whether a turn deadline has passed enough to resolve.
@@ -16,5 +14,4 @@ public static class TurnDeadlinePolicy
 		return now >= deadlineUtc.AddMilliseconds(skewMs);
 	}
 }
-
 

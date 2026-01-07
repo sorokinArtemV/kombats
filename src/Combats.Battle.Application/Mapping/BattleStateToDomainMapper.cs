@@ -2,7 +2,7 @@ using Combats.Battle.Application.Ports;
 using Combats.Battle.Domain;
 using Combats.Battle.Domain.Model;
 
-namespace Combats.Battle.Application.Models;
+namespace Combats.Battle.Application.Mapping;
 
 /// <summary>
 /// Mapper between Application BattleStateView and Domain BattleDomainState.

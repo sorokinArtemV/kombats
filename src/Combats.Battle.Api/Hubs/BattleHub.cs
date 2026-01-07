@@ -1,4 +1,4 @@
-using Combats.Battle.Api.Contracts.SignalR;
+using Combats.Battle.Api.Contracts.Realtime;
 using Combats.Battle.Application.Ports;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -28,7 +28,7 @@ public class BattleHub : Hub
         _logger = logger;
     }
 
-    public async Task<BattleSnapshotDto> JoinBattle(Guid battleId)
+    public async Task<BattleSnapshot> JoinBattle(Guid battleId)
     {
         var userIdClaim = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value 
                          ?? Context.User?.FindFirst("sub")?.Value;
@@ -95,7 +95,7 @@ public class BattleHub : Hub
         }
 
         // Return typed snapshot DTO with DeadlineUtc as ISO string
-        return new BattleSnapshotDto
+        return new BattleSnapshot
         {
             BattleId = state.BattleId,
             PlayerAId = state.PlayerAId,

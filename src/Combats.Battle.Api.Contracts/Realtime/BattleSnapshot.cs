@@ -1,8 +1,8 @@
 using Combats.Contracts.Battle;
 
-namespace Combats.Battle.Api.Contracts.SignalR;
+namespace Combats.Battle.Api.Contracts.Realtime;
 
-public class BattleSnapshotDto
+public class BattleSnapshot
 {
     public Guid BattleId { get; init; }
     public Guid PlayerAId { get; init; }
@@ -18,6 +18,4 @@ public class BattleSnapshotDto
     public int? PlayerAHp { get; init; }
     public int? PlayerBHp { get; init; }
 }
-
-
 

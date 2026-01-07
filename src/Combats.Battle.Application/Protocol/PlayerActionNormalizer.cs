@@ -1,7 +1,7 @@
 using Combats.Battle.Application.Ports;
 using Microsoft.Extensions.Logging;
 
-namespace Combats.Battle.Application.Validation;
+namespace Combats.Battle.Application.Protocol;
 
 /// <summary>
 /// Application-layer service for normalizing player action payloads.
@@ -89,5 +89,4 @@ public class PlayerActionNormalizer
         }
     }
 }
-
 

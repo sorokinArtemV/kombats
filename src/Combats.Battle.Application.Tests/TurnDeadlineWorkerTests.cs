@@ -1,4 +1,4 @@
-using Combats.Battle.Application.Services;
+using Combats.Battle.Application.Policies.Time;
 using Xunit;
 
 namespace Combats.Battle.Application.Tests;

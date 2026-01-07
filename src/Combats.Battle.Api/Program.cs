@@ -1,5 +1,6 @@
 using Combats.Battle.Application.Ports;
-using Combats.Battle.Application.Validation;
+using Combats.Battle.Application.Protocol;
+using Combats.Battle.Application.Rules;
 using Combats.Battle.Api.Hubs;
 using Combats.Battle.Api.Middleware;
 using Combats.Battle.Api.Realtime;
@@ -71,6 +72,8 @@ builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<ICombatProfileProvider, DatabaseCombatProfileProvider>();
 
 // Register Application services
+builder.Services.AddSingleton<BattleRulesDefaults>();
+builder.Services.AddScoped<RulesetNormalizer>();
 builder.Services.AddScoped<PlayerActionNormalizer>();
 builder.Services.AddScoped<BattleLifecycleAppService>();
 builder.Services.AddScoped<BattleTurnAppService>();

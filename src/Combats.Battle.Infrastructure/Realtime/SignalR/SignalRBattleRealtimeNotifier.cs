@@ -1,4 +1,4 @@
-using Combats.Battle.Api.Contracts.SignalR;
+using Combats.Battle.Api.Contracts.Realtime;
 using Combats.Battle.Application.Ports;
 using Combats.Contracts.Battle;
 using Microsoft.AspNetCore.SignalR;
@@ -26,7 +26,7 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
 
     public async Task NotifyBattleReadyAsync(Guid battleId, Guid playerAId, Guid playerBId, CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group($"battle:{battleId}").SendAsync("BattleReady", new BattleReadyDto
+        await _hubContext.Clients.Group($"battle:{battleId}").SendAsync("BattleReady", new BattleReady
         {
             BattleId = battleId,
             PlayerAId = playerAId,
@@ -36,7 +36,7 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
 
     public async Task NotifyTurnOpenedAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group($"battle:{battleId}").SendAsync("TurnOpened", new TurnOpenedDto
+        await _hubContext.Clients.Group($"battle:{battleId}").SendAsync("TurnOpened", new TurnOpened
         {
             BattleId = battleId,
             TurnIndex = turnIndex,
@@ -46,7 +46,7 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
 
     public async Task NotifyTurnResolvedAsync(Guid battleId, int turnIndex, string playerAAction, string playerBAction, CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group($"battle:{battleId}").SendAsync("TurnResolved", new TurnResolvedDto
+        await _hubContext.Clients.Group($"battle:{battleId}").SendAsync("TurnResolved", new TurnResolved
         {
             BattleId = battleId,
             TurnIndex = turnIndex,
@@ -83,7 +83,7 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
         int? playerBHp,
         CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group($"battle:{battleId}").SendAsync("BattleStateUpdated", new BattleSnapshotDto
+        await _hubContext.Clients.Group($"battle:{battleId}").SendAsync("BattleStateUpdated", new BattleSnapshot
         {
             BattleId = battleId,
             PlayerAId = playerAId,
@@ -103,7 +103,7 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
 
     public async Task NotifyBattleEndedAsync(Guid battleId, string reason, Guid? winnerPlayerId, DateTime endedAt, CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group($"battle:{battleId}").SendAsync("BattleEnded", new BattleEndedDto
+        await _hubContext.Clients.Group($"battle:{battleId}").SendAsync("BattleEnded", new Combats.Battle.Api.Contracts.Realtime.BattleEnded
         {
             BattleId = battleId,
             Reason = reason,
