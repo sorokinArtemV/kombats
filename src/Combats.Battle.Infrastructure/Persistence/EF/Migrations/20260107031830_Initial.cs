@@ -4,7 +4,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Combats.Battle.Infrastructure.Migrations
+namespace Combats.Battle.Infrastructure.Persistence.EF.Migrations
 {
     /// <inheritdoc />
     public partial class Initial : Migration
@@ -12,6 +12,25 @@ namespace Combats.Battle.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.CreateTable(
+                name: "battles",
+                columns: table => new
+                {
+                    BattleId = table.Column<Guid>(type: "uuid", nullable: false),
+                    MatchId = table.Column<Guid>(type: "uuid", nullable: false),
+                    PlayerAId = table.Column<Guid>(type: "uuid", nullable: false),
+                    PlayerBId = table.Column<Guid>(type: "uuid", nullable: false),
+                    State = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    EndedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    EndReason = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    WinnerPlayerId = table.Column<Guid>(type: "uuid", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_battles", x => x.BattleId);
+                });
+
             migrationBuilder.CreateTable(
                 name: "InboxState",
                 columns: table => new
@@ -49,6 +68,21 @@ namespace Combats.Battle.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_OutboxState", x => x.OutboxId);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "player_profiles",
+                columns: table => new
+                {
+                    PlayerId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Strength = table.Column<int>(type: "integer", nullable: false),
+                    Stamina = table.Column<int>(type: "integer", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Version = table.Column<int>(type: "integer", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_player_profiles", x => x.PlayerId);
                 });
 
             migrationBuilder.CreateTable(
@@ -94,6 +128,11 @@ namespace Combats.Battle.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_battles_MatchId",
+                table: "battles",
+                column: "MatchId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_InboxState_Delivered",
                 table: "InboxState",
                 column: "Delivered");
@@ -130,7 +169,13 @@ namespace Combats.Battle.Infrastructure.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
+                name: "battles");
+
+            migrationBuilder.DropTable(
                 name: "OutboxMessage");
+
+            migrationBuilder.DropTable(
+                name: "player_profiles");
 
             migrationBuilder.DropTable(
                 name: "InboxState");

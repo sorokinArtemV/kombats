@@ -9,10 +9,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Combats.Battle.Infrastructure.Migrations
+namespace Combats.Battle.Infrastructure.Persistence.EF.Migrations
 {
     [DbContext(typeof(BattleDbContext))]
-    [Migration("20260106073429_Initial")]
+    [Migration("20260107031830_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
