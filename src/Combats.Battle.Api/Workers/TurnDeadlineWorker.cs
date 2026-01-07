@@ -1,5 +1,5 @@
 using Combats.Battle.Application.Ports;
-using Combats.Battle.Application.UseCases;
+using Combats.Battle.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -17,6 +17,7 @@ public sealed class TurnDeadlineWorker : BackgroundService
 
     private const int PollIntervalMs = 300; // Poll every 300ms
     private const int BatchSize = 50; // Process up to 50 battles per iteration
+    private const int SkewMs = 100; // Small buffer for clock skew (ms)
 
     public TurnDeadlineWorker(
         IServiceScopeFactory scopeFactory,
@@ -98,8 +99,9 @@ public sealed class TurnDeadlineWorker : BackgroundService
                 var turnIndex = state.TurnIndex;
                 var deadlineUtc = state.DeadlineUtc;
                 
-                // Check if deadline has actually passed (with small buffer for clock skew)
-                if (now < deadlineUtc.AddMilliseconds(-100))
+				// Check if deadline has actually passed (with small buffer for clock skew)
+				// Only resolve when now is after deadline (plus small skew buffer)
+				if (!TurnDeadlinePolicy.ShouldResolve(now, deadlineUtc, SkewMs))
                 {
                     // Deadline hasn't passed yet (clock skew or race condition)
                     skippedCount++;
@@ -138,11 +140,12 @@ public sealed class TurnDeadlineWorker : BackgroundService
 
         if (resolvedCount > 0 || skippedCount > 0)
         {
-            _logger.LogDebug(
+                _logger.LogDebug(
                 "Processed {Total} battles: {Resolved} resolved, {Skipped} skipped",
                 dueBattles.Count, resolvedCount, skippedCount);
         }
     }
+
 }
 
 

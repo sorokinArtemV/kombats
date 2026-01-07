@@ -1,5 +1,4 @@
 using Combats.Battle.Application.Ports;
-using Combats.Battle.Application.UseCases;
 using Combats.Battle.Application.Validation;
 using Combats.Battle.Api.Hubs;
 using Combats.Battle.Api.Middleware;
@@ -7,6 +6,7 @@ using Combats.Battle.Api.Realtime;
 using Combats.Battle.Infrastructure.Realtime.SignalR;
 using Microsoft.AspNetCore.SignalR;
 using Combats.Battle.Api.Workers;
+using Combats.Battle.Application.Services;
 using Combats.Battle.Domain;
 using Combats.Battle.Domain.Engine;
 using Combats.Battle.Infrastructure.Messaging.Consumers;

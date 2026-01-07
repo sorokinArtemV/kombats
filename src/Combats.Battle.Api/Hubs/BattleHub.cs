@@ -1,9 +1,9 @@
 using Combats.Battle.Api.Contracts.SignalR;
 using Combats.Battle.Application.Ports;
-using Combats.Battle.Application.UseCases;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
+using Combats.Battle.Application.Services;
 
 namespace Combats.Battle.Api.Hubs;
 

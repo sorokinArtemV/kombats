@@ -1,14 +1,13 @@
 using Combats.Battle.Application.Models;
 using Combats.Battle.Application.Ports;
 using Combats.Battle.Application.Validation;
-using Combats.Battle.Domain;
 using Combats.Battle.Domain.Engine;
 using Combats.Battle.Domain.Events;
 using Combats.Battle.Domain.Model;
 using Combats.Battle.Domain.Rules;
 using Microsoft.Extensions.Logging;
 
-namespace Combats.Battle.Application.UseCases;
+namespace Combats.Battle.Application.Services;
 
 /// <summary>
 /// Application service for battle turn operations: submitting actions and resolving turns.
@@ -91,12 +90,21 @@ public class BattleTurnAppService
             actionPayload,
             playerId);
 
-        // Store action for current server turn index
-        await _stateStore.StoreActionAsync(battleId, state.TurnIndex, playerId, normalizedPayload, cancellationToken);
+        // Store action for current server turn index (first-write-wins)
+        var storeResult = await _stateStore.StoreActionAsync(battleId, state.TurnIndex, playerId, normalizedPayload, cancellationToken);
 
-        _logger.LogInformation(
-            "Action stored for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}, IsNoAction: {IsNoAction}",
-            battleId, state.TurnIndex, playerId, string.IsNullOrEmpty(normalizedPayload));
+        if (storeResult == ActionStoreResult.Accepted)
+        {
+            _logger.LogInformation(
+                "Action stored for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}, IsNoAction: {IsNoAction}",
+                battleId, state.TurnIndex, playerId, string.IsNullOrEmpty(normalizedPayload));
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Action already submitted for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}. Skipping duplicate submission.",
+                battleId, state.TurnIndex, playerId);
+        }
 
         // Early resolution optimization: if both players have actions, try to resolve immediately
         // This is best-effort; if CAS fails, deadline worker will handle it
@@ -227,7 +235,7 @@ public class BattleTurnAppService
             {
                 case BattleEndedDomainEvent battleEnded:
                     // Commit battle end atomically (includes HP update)
-                    var ended = await _stateStore.EndBattleAndMarkResolvedAsync(
+                    var endResult = await _stateStore.EndBattleAndMarkResolvedAsync(
                         battleId,
                         turnIndex,
                         resolutionResult.NewState.NoActionStreakBoth,
@@ -235,9 +243,9 @@ public class BattleTurnAppService
                         resolutionResult.NewState.PlayerB.CurrentHp,
                         cancellationToken);
 
-                    if (ended)
+                    if (endResult == EndBattleCommitResult.EndedNow)
                     {
-                        // Only notify/publish if commit succeeded
+                        // Only notify/publish if battle ended in this call
                         await _notifier.NotifyBattleEndedAsync(
                             battleId,
                             battleEnded.Reason.ToString(),
@@ -258,13 +266,19 @@ public class BattleTurnAppService
                             "Battle {BattleId} ended. Reason: {Reason}, Winner: {WinnerPlayerId}",
                             battleId, battleEnded.Reason, battleEnded.WinnerPlayerId);
                     }
-                    else
+                    else if (endResult == EndBattleCommitResult.AlreadyEnded)
                     {
                         _logger.LogInformation(
                             "Battle {BattleId} already ended (duplicate ResolveTurn), skipping notifications",
                             battleId);
                     }
-                    return true; // Battle ended
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Battle {BattleId} could not be ended (NotCommitted). TurnIndex: {TurnIndex}",
+                            battleId, turnIndex);
+                    }
+                    return true; // Battle ended (or already ended)
 
                 case TurnResolvedDomainEvent turnResolved:
                     // Battle continues - open next turn

@@ -8,11 +8,11 @@ namespace Combats.Battle.Application.Ports;
 /// </summary>
 public interface IBattleRealtimeNotifier
 {
-    Task NotifyBattleReadyAsync(Guid battleId, Guid playerAId, Guid playerBId, CancellationToken cancellationToken = default);
-    Task NotifyTurnOpenedAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default);
-    Task NotifyTurnResolvedAsync(Guid battleId, int turnIndex, string playerAAction, string playerBAction, CancellationToken cancellationToken = default);
-    Task NotifyPlayerDamagedAsync(Guid battleId, Guid playerId, int damage, int remainingHp, int turnIndex, CancellationToken cancellationToken = default);
-    Task NotifyBattleStateUpdatedAsync(
+    public Task NotifyBattleReadyAsync(Guid battleId, Guid playerAId, Guid playerBId, CancellationToken cancellationToken = default);
+    public Task NotifyTurnOpenedAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default);
+    public Task NotifyTurnResolvedAsync(Guid battleId, int turnIndex, string playerAAction, string playerBAction, CancellationToken cancellationToken = default);
+    public Task NotifyPlayerDamagedAsync(Guid battleId, Guid playerId, int damage, int remainingHp, int turnIndex, CancellationToken cancellationToken = default);
+    public Task NotifyBattleStateUpdatedAsync(
         Guid battleId,
         Guid playerAId,
         Guid playerBId,

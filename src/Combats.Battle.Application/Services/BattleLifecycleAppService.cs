@@ -1,9 +1,8 @@
 using Combats.Battle.Application.Ports;
-using Combats.Battle.Domain;
 using Combats.Contracts.Battle;
 using Microsoft.Extensions.Logging;
 
-namespace Combats.Battle.Application.UseCases;
+namespace Combats.Battle.Application.Services;
 
 /// <summary>
 /// Application service for battle lifecycle operations.

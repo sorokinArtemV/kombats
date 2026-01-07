@@ -19,9 +19,9 @@ public class BattleState
     [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
     public long DeadlineUtcTicks { get; set; }
     
-    [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
-    [Obsolete("No longer used - deadlines are tracked in Redis ZSET (battle:deadlines)")]
-    public long NextResolveScheduledUtcTicks { get; set; } // Deprecated: kept for backward compatibility with existing Redis data
+    // [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+    // [Obsolete("No longer used - deadlines are tracked in Redis ZSET (battle:deadlines)")]
+    // public long NextResolveScheduledUtcTicks { get; set; } // Deprecated: kept for backward compatibility with existing Redis data
     public int NoActionStreakBoth { get; set; }
     public int LastResolvedTurnIndex { get; set; }
     public Guid MatchId { get; set; } // Store MatchId for BattleEnded event
@@ -45,19 +45,19 @@ public class BattleState
         DeadlineUtcTicks = deadlineUtc.ToUniversalTime().Ticks;
     }
 
-    [Obsolete("No longer used - deadlines are tracked in Redis ZSET (battle:deadlines)")]
-    public DateTime? GetNextResolveScheduledUtc()
-    {
-        return NextResolveScheduledUtcTicks > 0 
-            ? new DateTime(NextResolveScheduledUtcTicks, DateTimeKind.Utc) 
-            : null;
-    }
+    // [Obsolete("No longer used - deadlines are tracked in Redis ZSET (battle:deadlines)")]
+    // public DateTime? GetNextResolveScheduledUtc()
+    // {
+    //     return NextResolveScheduledUtcTicks > 0 
+    //         ? new DateTime(NextResolveScheduledUtcTicks, DateTimeKind.Utc) 
+    //         : null;
+    // }
 
-    [Obsolete("No longer used - deadlines are tracked in Redis ZSET (battle:deadlines)")]
-    public void SetNextResolveScheduledUtc(DateTime scheduledUtc)
-    {
-        NextResolveScheduledUtcTicks = scheduledUtc.ToUniversalTime().Ticks;
-    }
+    // [Obsolete("No longer used - deadlines are tracked in Redis ZSET (battle:deadlines)")]
+    // public void SetNextResolveScheduledUtc(DateTime scheduledUtc)
+    // {
+    //     NextResolveScheduledUtcTicks = scheduledUtc.ToUniversalTime().Ticks;
+    // }
 }
 
 /// <summary>

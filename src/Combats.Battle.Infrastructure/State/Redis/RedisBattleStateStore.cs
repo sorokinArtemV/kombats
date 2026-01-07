@@ -34,7 +34,10 @@ public class RedisBattleStateStore : IBattleStateStore
     private string GetActionKey(Guid battleId, int turnIndex, Guid playerId) => 
         $"{ActionKeyPrefix}{battleId}:turn:{turnIndex}:player:{playerId}";
 
-    public async Task<bool> TryInitializeBattleAsync(Guid battleId, BattleStateView initialState, CancellationToken cancellationToken = default)
+    public async Task<bool> TryInitializeBattleAsync(
+        Guid battleId, 
+        BattleStateView initialState, 
+        CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
         var key = GetStateKey(battleId);
@@ -255,7 +258,7 @@ public class RedisBattleStateStore : IBattleStateStore
         return success;
     }
 
-    public async Task<bool> EndBattleAndMarkResolvedAsync(
+    public async Task<EndBattleCommitResult> EndBattleAndMarkResolvedAsync(
         Guid battleId, 
         int turnIndex, 
         int noActionStreak,
@@ -268,16 +271,16 @@ public class RedisBattleStateStore : IBattleStateStore
 
         // Phase enum: ArenaOpen=0, TurnOpen=1, Resolving=2, Ended=3
         // Atomic: set Phase=Ended + LastResolvedTurnIndex + NoActionStreakBoth + HP + remove from deadlines ZSET
-        // This ensures idempotency: duplicates won't republish BattleEnded
+        // Returns: 2 = AlreadyEnded, 1 = EndedNow, 0 = NotCommitted
         const string script = @"
             local stateJson = redis.call('GET', KEYS[1])
             if not stateJson then
                 return 0
             end
             local state = cjson.decode(stateJson)
-            -- If already ended (Ended=3), return success (idempotent)
+            -- If already ended (Ended=3), return AlreadyEnded (2)
             if state.Phase == 3 then
-                return 1
+                return 2
             end
             -- Only end if currently resolving (Resolving=2) the specified turn
             if state.Phase ~= 2 or state.TurnIndex ~= tonumber(ARGV[1]) then
@@ -305,15 +308,23 @@ public class RedisBattleStateStore : IBattleStateStore
             new RedisKey[] { key, ActiveBattlesSetKey, DeadlinesZSetKey },
             new RedisValue[] { turnIndex, noActionStreak, playerAHp, playerBHp, battleId.ToString() });
 
-        var success = (int)result == 1;
-        if (success)
+        var resultCode = (int)result;
+        var commitResult = (EndBattleCommitResult)resultCode;
+
+        if (commitResult == EndBattleCommitResult.EndedNow)
         {
             _logger.LogInformation(
                 "Ended battle and marked turn {TurnIndex} resolved for BattleId: {BattleId} with HP A:{PlayerAHp} B:{PlayerBHp}",
                 turnIndex, battleId, playerAHp, playerBHp);
         }
+        else if (commitResult == EndBattleCommitResult.AlreadyEnded)
+        {
+            _logger.LogInformation(
+                "Battle {BattleId} already ended (idempotent EndBattleAndMarkResolvedAsync call)",
+                battleId);
+        }
 
-        return success;
+        return commitResult;
     }
 
     // Deadline index methods (Redis ZSET)
@@ -380,17 +391,29 @@ public class RedisBattleStateStore : IBattleStateStore
         return battleIds;
     }
 
-    public async Task StoreActionAsync(Guid battleId, int turnIndex, Guid playerId, string actionPayload, CancellationToken cancellationToken = default)
+    public async Task<ActionStoreResult> StoreActionAsync(Guid battleId, int turnIndex, Guid playerId, string actionPayload, CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
         var key = GetActionKey(battleId, turnIndex, playerId);
 
         // Store action with expiration (cleanup after battle ends)
-        await db.StringSetAsync(key, actionPayload, TimeSpan.FromHours(1));
+        // Use SET NX (When.NotExists) to ensure first-write-wins
+        var wasSet = await db.StringSetAsync(key, actionPayload, TimeSpan.FromHours(1), When.NotExists);
 
-        _logger.LogInformation(
-            "Stored action for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}",
-            battleId, turnIndex, playerId);
+        if (wasSet)
+        {
+            _logger.LogInformation(
+                "Stored action for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}",
+                battleId, turnIndex, playerId);
+            return ActionStoreResult.Accepted;
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Action already submitted for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}",
+                battleId, turnIndex, playerId);
+            return ActionStoreResult.AlreadySubmitted;
+        }
     }
 
     public async Task<(string? PlayerAAction, string? PlayerBAction)> GetActionsAsync(

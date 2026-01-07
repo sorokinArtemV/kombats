@@ -1,5 +1,5 @@
 using System.Data;
-using Combats.Battle.Application.UseCases;
+using Combats.Battle.Application.Services;
 using Combats.Battle.Infrastructure.Persistence.EF;
 using Combats.Battle.Infrastructure.Persistence.EF.DbContext;
 using Combats.Battle.Infrastructure.Persistence.EF.Entities;
