@@ -7,3 +7,4 @@ public class BattleReady
     public Guid PlayerBId { get; init; }
 }
 
+

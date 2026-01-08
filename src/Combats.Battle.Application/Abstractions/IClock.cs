@@ -1,4 +1,4 @@
-namespace Combats.Battle.Application.Ports;
+namespace Combats.Battle.Application.Abstractions;
 
 /// <summary>
 /// Port interface for time abstraction.
@@ -8,6 +8,7 @@ public interface IClock
 {
     DateTime UtcNow { get; }
 }
+
 
 
 

@@ -21,3 +21,4 @@ public class BattleRulesDefaults
     public int MinDamagePerStrength { get; init; } = 1;
 }
 
+

@@ -1,6 +1,7 @@
+using Combats.Battle.Application.Abstractions;
 using Combats.Battle.Application.Policies.Time;
-using Combats.Battle.Application.Ports;
 using Combats.Battle.Application.Services;
+using Combats.Battle.Domain.Model;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -16,7 +17,7 @@ public sealed class TurnDeadlineWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TurnDeadlineWorker> _logger;
 
-    private const int PollIntervalMs = 300; // Poll every 300ms
+    private const int PollIntervalMs = 1000; // Poll every 300ms
     private const int BatchSize = 50; // Process up to 50 battles per iteration
     private const int SkewMs = 100; // Small buffer for clock skew (ms)
 
@@ -86,10 +87,10 @@ public sealed class TurnDeadlineWorker : BackgroundService
                 }
 
                 // Only process battles in TurnOpen phase
-                if (state.Phase != BattlePhaseView.TurnOpen)
+                if (state.Phase != BattlePhase.TurnOpen)
                 {
                     // Battle is not in TurnOpen - remove from deadlines if it's ended
-                    if (state.Phase == BattlePhaseView.Ended)
+                    if (state.Phase == BattlePhase.Ended)
                     {
                         await stateStore.RemoveBattleDeadlineAsync(battleId, cancellationToken);
                     }

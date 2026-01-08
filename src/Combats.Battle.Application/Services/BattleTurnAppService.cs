@@ -1,5 +1,5 @@
 using Combats.Battle.Application.Mapping;
-using Combats.Battle.Application.Ports;
+using Combats.Battle.Application.Abstractions;
 using Combats.Battle.Application.Protocol;
 using Combats.Battle.Domain.Engine;
 using Combats.Battle.Domain.Events;
@@ -75,7 +75,7 @@ public class BattleTurnAppService
         }
 
         // If battle is ended, reject
-        if (state.Phase == BattlePhaseView.Ended)
+        if (state.Phase == BattlePhase.Ended)
         {
             _logger.LogWarning(
                 "Battle {BattleId} is ended, rejecting action submission from PlayerId: {PlayerId}",
@@ -168,9 +168,9 @@ public class BattleTurnAppService
         }
 
         // State machine validation: must be TurnOpen and turnIndex must match
-        if (state.Phase != BattlePhaseView.TurnOpen || state.TurnIndex != turnIndex)
+        if (state.Phase != BattlePhase.TurnOpen || state.TurnIndex != turnIndex)
         {
-            if (state.Phase == BattlePhaseView.Ended)
+            if (state.Phase == BattlePhase.Ended)
             {
                 _logger.LogInformation(
                     "Battle {BattleId} already ended, ignoring ResolveTurn for TurnIndex: {TurnIndex}",
@@ -178,7 +178,7 @@ public class BattleTurnAppService
                 return false;
             }
 
-            if (state.Phase == BattlePhaseView.Resolving && state.TurnIndex == turnIndex)
+            if (state.Phase == BattlePhase.Resolving && state.TurnIndex == turnIndex)
             {
                 _logger.LogInformation(
                     "Turn {TurnIndex} already being resolved for BattleId: {BattleId}",

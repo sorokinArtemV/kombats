@@ -1,5 +1,5 @@
 using Combats.Battle.Domain.Model;
-using Combats.Contracts.Battle;
+using Combats.Battle.Domain.Results;
 
 namespace Combats.Battle.Domain.Events;
 
@@ -26,12 +26,11 @@ public sealed record PlayerDamagedDomainEvent(
 
 /// <summary>
 /// Domain event: The battle has ended.
-/// Uses BattleEndReason from Contracts (shared enum).
 /// </summary>
 public sealed record BattleEndedDomainEvent(
     Guid BattleId,
     Guid? WinnerPlayerId,
-    BattleEndReason Reason,
+    EndBattleReason Reason,
     int FinalTurnIndex,
     DateTime OccurredAt) : IDomainEvent;
 

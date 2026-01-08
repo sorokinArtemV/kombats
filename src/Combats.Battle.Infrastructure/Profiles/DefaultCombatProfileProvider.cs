@@ -1,4 +1,4 @@
-using Combats.Battle.Application.Ports;
+using Combats.Battle.Application.Abstractions;
 using Microsoft.Extensions.Logging;
 
 namespace Combats.Battle.Infrastructure.Profiles;
@@ -28,6 +28,7 @@ public class DefaultCombatProfileProvider : ICombatProfileProvider
             new CombatProfile(playerId, DefaultStrength, DefaultStamina));
     }
 }
+
 
 
 

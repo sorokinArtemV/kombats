@@ -1,10 +1,12 @@
-using Combats.Battle.Application.Ports;
+using Combats.Battle.Application.Abstractions;
+using Combats.Battle.Application.ReadModels;
 using Combats.Battle.Application.Services;
 using Combats.Battle.Application.Protocol;
 using Combats.Battle.Domain.Engine;
 using Combats.Battle.Domain.Events;
 using Combats.Battle.Domain.Model;
-using Combats.Contracts.Battle;
+using Combats.Battle.Domain.Results;
+using Combats.Battle.Domain.Rules;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -56,38 +58,58 @@ public class BattleTurnAppServiceTests
         var occurredAt = DateTime.UtcNow;
         var winnerId = playerAId;
 
-		var state = new BattleStateView
+		var ruleset = new Ruleset(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 42);
+		var playerAStats = new PlayerStats(5, 5);
+		var playerBStats = new PlayerStats(5, 5);
+		var playerAState = new PlayerState(playerAId, 100, playerAStats);
+		var playerBState = new PlayerState(playerBId, 100, playerBStats);
+		
+		var state = new BattleSnapshot
         {
             BattleId = battleId,
             MatchId = matchId,
             PlayerAId = playerAId,
             PlayerBId = playerBId,
-			Phase = BattlePhaseView.TurnOpen,
+			Phase = BattlePhase.TurnOpen,
             TurnIndex = turnIndex,
             LastResolvedTurnIndex = turnIndex - 1,
-            Ruleset = new Ruleset { TurnSeconds = 30 }
+            Ruleset = ruleset,
+			DeadlineUtc = DateTime.UtcNow,
+			Version = 1,
+			PlayerAHp = 100,
+			PlayerBHp = 100,
+			PlayerAStrength = 5,
+			PlayerAStamina = 5,
+			PlayerBStrength = 5,
+			PlayerBStamina = 5
         };
-		var stateAfterCas = new BattleStateView
+		var stateAfterCas = new BattleSnapshot
 		{
 			BattleId = battleId,
 			MatchId = matchId,
 			PlayerAId = playerAId,
 			PlayerBId = playerBId,
-			Phase = BattlePhaseView.Resolving,
+			Phase = BattlePhase.Resolving,
 			TurnIndex = turnIndex,
 			LastResolvedTurnIndex = turnIndex - 1,
-			Ruleset = new Ruleset { TurnSeconds = 30 }
+			Ruleset = ruleset,
+			DeadlineUtc = DateTime.UtcNow,
+			Version = 1,
+			PlayerAHp = 100,
+			PlayerBHp = 100,
+			PlayerAStrength = 5,
+			PlayerAStamina = 5,
+			PlayerBStrength = 5,
+			PlayerBStamina = 5
 		};
-
-		var ruleset = new Combats.Contracts.Battle.Ruleset { Version = 1, TurnSeconds = 30, NoActionLimit = 3, Seed = 42 };
-		var playerAState = new PlayerState(playerAId, 100, 80, new PlayerStats(5, 5));
-		var playerBState = new PlayerState(playerBId, 100, 70, new PlayerStats(5, 5));
-		var domainState = new BattleDomainState(battleId, matchId, playerAId, playerBId, ruleset, BattlePhase.Resolving, turnIndex, 0, turnIndex - 1, playerAState, playerBState);
+		var domainPlayerAState = new PlayerState(playerAId, 100, 80, new PlayerStats(5, 5));
+		var domainPlayerBState = new PlayerState(playerBId, 100, 70, new PlayerStats(5, 5));
+		var domainState = new BattleDomainState(battleId, matchId, playerAId, playerBId, ruleset, BattlePhase.Resolving, turnIndex, 0, turnIndex - 1, domainPlayerAState, domainPlayerBState);
 
         var battleEndedEvent = new BattleEndedDomainEvent(
             battleId,
             winnerId,
-            BattleEndReason.Normal,
+            EndBattleReason.Normal,
             turnIndex,
             occurredAt);
 
@@ -131,7 +153,7 @@ public class BattleTurnAppServiceTests
         _notifierMock.Verify(
             x => x.NotifyBattleEndedAsync(
                 battleId,
-                BattleEndReason.Normal.ToString(),
+                EndBattleReason.Normal.ToString(),
                 winnerId,
                 occurredAt,
                 It.IsAny<CancellationToken>()),
@@ -140,7 +162,7 @@ public class BattleTurnAppServiceTests
             x => x.PublishBattleEndedAsync(
                 battleId,
                 matchId,
-                BattleEndReason.Normal,
+                EndBattleReason.Normal,
                 winnerId,
                 occurredAt,
                 It.IsAny<CancellationToken>()),
@@ -159,38 +181,55 @@ public class BattleTurnAppServiceTests
         var occurredAt = DateTime.UtcNow;
         var winnerId = playerAId;
 
-		var state = new BattleStateView
+		var ruleset = new Ruleset(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 42);
+		
+		var state = new BattleSnapshot
         {
             BattleId = battleId,
             MatchId = matchId,
             PlayerAId = playerAId,
             PlayerBId = playerBId,
-			Phase = BattlePhaseView.TurnOpen,
+			Phase = BattlePhase.TurnOpen,
             TurnIndex = turnIndex,
             LastResolvedTurnIndex = turnIndex - 1,
-            Ruleset = new Ruleset { TurnSeconds = 30 }
+            Ruleset = ruleset,
+			DeadlineUtc = DateTime.UtcNow,
+			Version = 1,
+			PlayerAHp = 100,
+			PlayerBHp = 100,
+			PlayerAStrength = 5,
+			PlayerAStamina = 5,
+			PlayerBStrength = 5,
+			PlayerBStamina = 5
         };
-		var stateAfterCas = new BattleStateView
+		var stateAfterCas = new BattleSnapshot
 		{
 			BattleId = battleId,
 			MatchId = matchId,
 			PlayerAId = playerAId,
 			PlayerBId = playerBId,
-			Phase = BattlePhaseView.Resolving,
+			Phase = BattlePhase.Resolving,
 			TurnIndex = turnIndex,
 			LastResolvedTurnIndex = turnIndex - 1,
-			Ruleset = new Ruleset { TurnSeconds = 30 }
+			Ruleset = ruleset,
+			DeadlineUtc = DateTime.UtcNow,
+			Version = 1,
+			PlayerAHp = 100,
+			PlayerBHp = 100,
+			PlayerAStrength = 5,
+			PlayerAStamina = 5,
+			PlayerBStrength = 5,
+			PlayerBStamina = 5
 		};
 
-		var ruleset = new Combats.Contracts.Battle.Ruleset { Version = 1, TurnSeconds = 30, NoActionLimit = 3, Seed = 42 };
-		var playerAState = new PlayerState(playerAId, 100, 80, new PlayerStats(5, 5));
-		var playerBState = new PlayerState(playerBId, 100, 70, new PlayerStats(5, 5));
-		var domainState = new BattleDomainState(battleId, matchId, playerAId, playerBId, ruleset, BattlePhase.Resolving, turnIndex, 0, turnIndex - 1, playerAState, playerBState);
+		var domainPlayerAState = new PlayerState(playerAId, 100, 80, new PlayerStats(5, 5));
+		var domainPlayerBState = new PlayerState(playerBId, 100, 70, new PlayerStats(5, 5));
+		var domainState = new BattleDomainState(battleId, matchId, playerAId, playerBId, ruleset, BattlePhase.Resolving, turnIndex, 0, turnIndex - 1, domainPlayerAState, domainPlayerBState);
 
         var battleEndedEvent = new BattleEndedDomainEvent(
             battleId,
             winnerId,
-            BattleEndReason.Normal,
+            EndBattleReason.Normal,
             turnIndex,
             occurredAt);
 
@@ -243,7 +282,7 @@ public class BattleTurnAppServiceTests
             x => x.PublishBattleEndedAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<Guid>(),
-                It.IsAny<BattleEndReason>(),
+                It.IsAny<EndBattleReason>(),
                 It.IsAny<Guid?>(),
                 It.IsAny<DateTime>(),
                 It.IsAny<CancellationToken>()),
@@ -264,16 +303,24 @@ public class BattleTurnAppServiceTests
         var deadline = now.AddSeconds(30);
         _clockMock.Setup(x => x.UtcNow).Returns(now);
 
-		var state = new BattleStateView
+		var ruleset = new Ruleset(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 0);
+		var state = new BattleSnapshot
         {
             BattleId = battleId,
 			PlayerAId = playerId,
 			PlayerBId = playerId,
-            Phase = BattlePhaseView.TurnOpen,
+            Phase = BattlePhase.TurnOpen,
             TurnIndex = turnIndex,
             LastResolvedTurnIndex = turnIndex - 1,
             DeadlineUtc = deadline,
-            Ruleset = new Ruleset { TurnSeconds = 30 }
+            Ruleset = ruleset,
+			Version = 1,
+			PlayerAHp = 100,
+			PlayerBHp = 100,
+			PlayerAStrength = 5,
+			PlayerAStamina = 5,
+			PlayerBStrength = 5,
+			PlayerBStamina = 5
         };
 
         _stateStoreMock
@@ -307,16 +354,24 @@ public class BattleTurnAppServiceTests
         var deadline = now.AddSeconds(30);
         _clockMock.Setup(x => x.UtcNow).Returns(now);
 
-		var state = new BattleStateView
+		var ruleset = new Ruleset(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 0);
+		var state = new BattleSnapshot
         {
             BattleId = battleId,
 			PlayerAId = playerId,
 			PlayerBId = playerId,
-            Phase = BattlePhaseView.TurnOpen,
+            Phase = BattlePhase.TurnOpen,
             TurnIndex = turnIndex,
             LastResolvedTurnIndex = turnIndex - 1,
             DeadlineUtc = deadline,
-            Ruleset = new Ruleset { TurnSeconds = 30 }
+            Ruleset = ruleset,
+			Version = 1,
+			PlayerAHp = 100,
+			PlayerBHp = 100,
+			PlayerAStrength = 5,
+			PlayerAStamina = 5,
+			PlayerBStrength = 5,
+			PlayerBStamina = 5
         };
 
         _stateStoreMock

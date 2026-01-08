@@ -1,26 +1,27 @@
-using Combats.Battle.Application.Ports;
+using Combats.Battle.Application.ReadModels;
+using Combats.Battle.Domain.Model;
 using Combats.Battle.Infrastructure.State.Redis;
 
 namespace Combats.Battle.Infrastructure.State.Redis.Mapping;
 
 /// <summary>
-/// Mapper between Infrastructure stored state (Redis schema) and Application BattleStateView.
-/// Infrastructure layer owns this mapping (persistence schema <-> application view).
+/// Mapper between Infrastructure stored state (Redis schema) and Domain/Application models.
+/// Infrastructure layer owns this mapping (persistence schema <-> domain/read models).
 /// </summary>
 public static class StoredStateMapper
 {
     /// <summary>
-    /// Maps Infrastructure BattleState to Application BattleStateView.
+    /// Maps Infrastructure BattleState to Application BattleSnapshot (read model).
     /// </summary>
-    public static BattleStateView ToView(BattleState state)
+    public static BattleSnapshot ToSnapshot(BattleState state)
     {
-        return new BattleStateView
+        return new BattleSnapshot
         {
             BattleId = state.BattleId,
             PlayerAId = state.PlayerAId,
             PlayerBId = state.PlayerBId,
             Ruleset = state.Ruleset,
-            Phase = MapPhase(state.Phase),
+            Phase = state.Phase,
             TurnIndex = state.TurnIndex,
             DeadlineUtc = state.GetDeadlineUtc(),
             NoActionStreakBoth = state.NoActionStreakBoth,
@@ -37,55 +38,31 @@ public static class StoredStateMapper
     }
 
     /// <summary>
-    /// Maps Application BattleStateView to Infrastructure BattleState.
+    /// Maps Domain BattleDomainState to Infrastructure BattleState (for storage).
     /// </summary>
-    public static BattleState FromView(BattleStateView view)
+    public static BattleState FromDomainState(BattleDomainState domainState, DateTime deadlineUtc, int version)
     {
         var state = new BattleState
         {
-            BattleId = view.BattleId,
-            PlayerAId = view.PlayerAId,
-            PlayerBId = view.PlayerBId,
-            Ruleset = view.Ruleset,
-            Phase = MapPhase(view.Phase),
-            TurnIndex = view.TurnIndex,
-            NoActionStreakBoth = view.NoActionStreakBoth,
-            LastResolvedTurnIndex = view.LastResolvedTurnIndex,
-            MatchId = view.MatchId,
-            Version = view.Version,
-            PlayerAHp = view.PlayerAHp,
-            PlayerBHp = view.PlayerBHp,
-            PlayerAStrength = view.PlayerAStrength,
-            PlayerAStamina = view.PlayerAStamina,
-            PlayerBStrength = view.PlayerBStrength,
-            PlayerBStamina = view.PlayerBStamina
+            BattleId = domainState.BattleId,
+            PlayerAId = domainState.PlayerAId,
+            PlayerBId = domainState.PlayerBId,
+            Ruleset = domainState.Ruleset,
+            Phase = domainState.Phase,
+            TurnIndex = domainState.TurnIndex,
+            NoActionStreakBoth = domainState.NoActionStreakBoth,
+            LastResolvedTurnIndex = domainState.LastResolvedTurnIndex,
+            MatchId = domainState.MatchId,
+            Version = version,
+            PlayerAHp = domainState.PlayerA.CurrentHp,
+            PlayerBHp = domainState.PlayerB.CurrentHp,
+            PlayerAStrength = domainState.PlayerA.Stats.Strength,
+            PlayerAStamina = domainState.PlayerA.Stats.Stamina,
+            PlayerBStrength = domainState.PlayerB.Stats.Strength,
+            PlayerBStamina = domainState.PlayerB.Stats.Stamina
         };
-        state.SetDeadlineUtc(view.DeadlineUtc);
+        state.SetDeadlineUtc(deadlineUtc);
         return state;
-    }
-
-    private static BattlePhaseView MapPhase(BattlePhase phase)
-    {
-        return phase switch
-        {
-            BattlePhase.ArenaOpen => BattlePhaseView.ArenaOpen,
-            BattlePhase.TurnOpen => BattlePhaseView.TurnOpen,
-            BattlePhase.Resolving => BattlePhaseView.Resolving,
-            BattlePhase.Ended => BattlePhaseView.Ended,
-            _ => throw new ArgumentException($"Unknown phase: {phase}")
-        };
-    }
-
-    private static BattlePhase MapPhase(BattlePhaseView phase)
-    {
-        return phase switch
-        {
-            BattlePhaseView.ArenaOpen => BattlePhase.ArenaOpen,
-            BattlePhaseView.TurnOpen => BattlePhase.TurnOpen,
-            BattlePhaseView.Resolving => BattlePhase.Resolving,
-            BattlePhaseView.Ended => BattlePhase.Ended,
-            _ => throw new ArgumentException($"Unknown phase: {phase}")
-        };
     }
 }
 

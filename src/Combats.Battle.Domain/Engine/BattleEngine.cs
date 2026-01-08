@@ -1,7 +1,7 @@
 using Combats.Battle.Domain.Events;
 using Combats.Battle.Domain.Model;
+using Combats.Battle.Domain.Results;
 using Combats.Battle.Domain.Rules;
-using Combats.Contracts.Battle;
 
 namespace Combats.Battle.Domain.Engine;
 
@@ -67,7 +67,7 @@ public sealed class BattleEngine : IBattleEngine
                 events.Add(new BattleEndedDomainEvent(
                     state.BattleId,
                     WinnerPlayerId: null,
-                    BattleEndReason.DoubleForfeit,
+                    EndBattleReason.DoubleForfeit,
                     state.TurnIndex,
                     now));
 
@@ -153,23 +153,23 @@ public sealed class BattleEngine : IBattleEngine
 
         // Check for battle end due to player death
         var winnerId = (Guid?)null;
-        var endReason = BattleEndReason.Normal;
+        var endReason = EndBattleReason.Normal;
 
         if (playerA.IsDead && playerB.IsDead)
         {
             // Both dead - draw
-            endReason = BattleEndReason.Normal; // Could be a separate "Draw" reason
+            endReason = EndBattleReason.Normal; // Could be a separate "Draw" reason
             winnerId = null;
         }
         else if (playerA.IsDead)
         {
             winnerId = state.PlayerBId;
-            endReason = BattleEndReason.Normal;
+            endReason = EndBattleReason.Normal;
         }
         else if (playerB.IsDead)
         {
             winnerId = state.PlayerAId;
-            endReason = BattleEndReason.Normal;
+            endReason = EndBattleReason.Normal;
         }
 
         // Create new state

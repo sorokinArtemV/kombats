@@ -1,4 +1,4 @@
-namespace Combats.Battle.Application.Ports;
+namespace Combats.Battle.Application.Abstractions;
 
 /// <summary>
 /// Port interface for retrieving player combat profiles (stats).
@@ -21,6 +21,7 @@ public record CombatProfile(
     Guid PlayerId,
     int Strength,
     int Stamina);
+
 
 
 

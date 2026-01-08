@@ -1,6 +1,6 @@
-using Combats.Contracts.Battle;
+using Combats.Battle.Domain.Rules;
 
-namespace Combats.Battle.Application.Ports;
+namespace Combats.Battle.Application.Abstractions;
 
 /// <summary>
 /// Port interface for realtime notifications to battle participants.

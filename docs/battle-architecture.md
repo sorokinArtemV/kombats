@@ -276,3 +276,4 @@ else if (endResult == EndBattleCommitResult.AlreadyEnded)
 - **Infrastructure**: Integration tests with Redis/PostgreSQL
 - **Idempotency**: Critical to test duplicate operations (retries, race conditions)
 
+

@@ -8,3 +8,4 @@ public class BattleEnded
     public string EndedAt { get; init; } = string.Empty; // ISO 8601 string
 }
 
+

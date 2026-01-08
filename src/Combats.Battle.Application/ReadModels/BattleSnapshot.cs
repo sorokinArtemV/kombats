@@ -1,23 +1,24 @@
-using Combats.Contracts.Battle;
+using Combats.Battle.Domain.Model;
+using Combats.Battle.Domain.Rules;
 
-namespace Combats.Battle.Application.Ports;
+namespace Combats.Battle.Application.ReadModels;
 
 /// <summary>
-/// Application view of battle state (read-only snapshot).
-/// Infrastructure maps its BattleState to/from this view.
+/// Read model for battle state - used for UI queries and realtime notifications.
+/// This is a read-only snapshot optimized for presentation.
 /// </summary>
-public class BattleStateView
+public sealed class BattleSnapshot
 {
     public Guid BattleId { get; init; }
+    public Guid MatchId { get; init; }
     public Guid PlayerAId { get; init; }
     public Guid PlayerBId { get; init; }
     public Ruleset Ruleset { get; init; } = null!;
-    public BattlePhaseView Phase { get; init; }
+    public BattlePhase Phase { get; init; }
     public int TurnIndex { get; init; }
     public DateTime DeadlineUtc { get; init; }
     public int NoActionStreakBoth { get; init; }
     public int LastResolvedTurnIndex { get; init; }
-    public Guid MatchId { get; init; }
     public int Version { get; init; }
     
     // Player HP
@@ -30,18 +31,4 @@ public class BattleStateView
     public int? PlayerBStrength { get; init; }
     public int? PlayerBStamina { get; init; }
 }
-
-/// <summary>
-/// Battle phase enum for Application layer (matches Domain enum).
-/// </summary>
-public enum BattlePhaseView
-{
-    ArenaOpen = 0,
-    TurnOpen = 1,
-    Resolving = 2,
-    Ended = 3
-}
-
-
-
 

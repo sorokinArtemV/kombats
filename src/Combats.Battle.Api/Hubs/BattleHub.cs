@@ -1,9 +1,10 @@
-using Combats.Battle.Api.Contracts.Realtime;
-using Combats.Battle.Application.Ports;
+using Combats.Battle.Api.Dto.Realtime;
+using Combats.Battle.Application.Abstractions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
 using Combats.Battle.Application.Services;
+using Combats.Battle.Domain.Model;
 
 namespace Combats.Battle.Api.Hubs;
 
@@ -28,7 +29,7 @@ public class BattleHub : Hub
         _logger = logger;
     }
 
-    public async Task<BattleSnapshot> JoinBattle(Guid battleId)
+    public async Task<BattleSnapshotDto> JoinBattle(Guid battleId)
     {
         var userIdClaim = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value 
                          ?? Context.User?.FindFirst("sub")?.Value;
@@ -49,24 +50,13 @@ public class BattleHub : Hub
         await Groups.AddToGroupAsync(Context.ConnectionId, $"battle:{battleId}");
 
         // Get current battle state (snapshot) - authoritative source
-        BattleStateView? state;
-        try
+        var state = await _stateStore.GetStateAsync(battleId);
+        if (state == null)
         {
-            state = await _stateStore.GetStateAsync(battleId);
-            if (state == null)
-            {
-                _logger.LogWarning(
-                    "Battle {BattleId} not found for user {UserId}",
-                    battleId, userId);
-                throw new HubException($"Battle {battleId} not found");
-            }
-        }
-        catch (InvalidOperationException ex)
-        {
-            _logger.LogError(ex,
-                "Failed to load battle state for BattleId: {BattleId}, UserId: {UserId}",
+            _logger.LogWarning(
+                "Battle {BattleId} not found for user {UserId}",
                 battleId, userId);
-            throw new HubException($"Battle {battleId} state is corrupted");
+            throw new HubException($"Battle {battleId} not found");
         }
 
         // Verify user is a participant
@@ -80,7 +70,7 @@ public class BattleHub : Hub
 
         // Determine ended reason if battle is ended
         string? endedReason = null;
-        if (state.Phase == BattlePhaseView.Ended)
+        if (state.Phase == BattlePhase.Ended)
         {
             // For now, we infer DoubleForfeit if NoActionStreakBoth >= NoActionLimit
             // In production, this should be stored in BattleState or retrieved from Postgres
@@ -95,7 +85,7 @@ public class BattleHub : Hub
         }
 
         // Return typed snapshot DTO with DeadlineUtc as ISO string
-        return new BattleSnapshot
+        return new BattleSnapshotDto
         {
             BattleId = state.BattleId,
             PlayerAId = state.PlayerAId,

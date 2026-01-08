@@ -1,5 +1,4 @@
-using Combats.Battle.Application.Ports;
-using Combats.Battle.Infrastructure.Persistence.EF;
+using Combats.Battle.Application.Abstractions;
 using Combats.Battle.Infrastructure.Persistence.EF.DbContext;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;

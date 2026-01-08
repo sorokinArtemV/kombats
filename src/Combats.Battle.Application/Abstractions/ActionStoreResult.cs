@@ -1,4 +1,4 @@
-namespace Combats.Battle.Application.Ports;
+namespace Combats.Battle.Application.Abstractions;
 
 /// <summary>
 /// Result of attempting to store a player action.
@@ -15,4 +15,5 @@ public enum ActionStoreResult
     /// </summary>
     AlreadySubmitted = 1
 }
+
 

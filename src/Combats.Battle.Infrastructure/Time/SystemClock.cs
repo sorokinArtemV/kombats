@@ -1,4 +1,4 @@
-using Combats.Battle.Application.Ports;
+using Combats.Battle.Application.Abstractions;
 
 namespace Combats.Battle.Infrastructure.Time;
 
@@ -10,6 +10,7 @@ public class SystemClock : IClock
 {
     public DateTime UtcNow => DateTime.UtcNow;
 }
+
 
 
 

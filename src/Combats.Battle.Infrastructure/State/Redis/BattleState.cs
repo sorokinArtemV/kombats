@@ -1,11 +1,13 @@
 using System.Text.Json.Serialization;
-using Combats.Contracts.Battle;
+using Combats.Battle.Domain.Model;
+using Combats.Battle.Domain.Rules;
 
 namespace Combats.Battle.Infrastructure.State.Redis;
 
 /// <summary>
 /// Infrastructure-specific battle state (Redis JSON serialization).
 /// This is the concrete type stored in Redis.
+/// Uses domain models for Ruleset and BattlePhase.
 /// </summary>
 public class BattleState
 {
@@ -60,15 +62,6 @@ public class BattleState
     // }
 }
 
-/// <summary>
-/// Battle phase enum for Infrastructure layer (matches Domain enum).
-/// </summary>
-public enum BattlePhase
-{
-    ArenaOpen = 0,
-    TurnOpen = 1,
-    Resolving = 2,
-    Ended = 3
-}
+// BattlePhase is now defined in Domain.Model.BattlePhase
 
 

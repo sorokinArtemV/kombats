@@ -1,13 +1,17 @@
-namespace Combats.Battle.Application.Ports;
+using Combats.Battle.Application.ReadModels;
+using Combats.Battle.Domain.Model;
+
+namespace Combats.Battle.Application.Abstractions;
 
 /// <summary>
 /// Port interface for battle state persistence.
 /// Application defines what it needs; Infrastructure provides implementation.
+/// Works with domain models for writes and read models for queries.
 /// </summary>
 public interface IBattleStateStore
 {
-    Task<bool> TryInitializeBattleAsync(Guid battleId, BattleStateView initialState, CancellationToken cancellationToken = default);
-    Task<BattleStateView?> GetStateAsync(Guid battleId, CancellationToken cancellationToken = default);
+    Task<bool> TryInitializeBattleAsync(Guid battleId, BattleDomainState initialState, CancellationToken cancellationToken = default);
+    Task<BattleSnapshot?> GetStateAsync(Guid battleId, CancellationToken cancellationToken = default);
     Task<bool> TryOpenTurnAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default);
     Task<bool> TryMarkTurnResolvingAsync(Guid battleId, int turnIndex, CancellationToken cancellationToken = default);
     Task<bool> MarkTurnResolvedAndOpenNextAsync(

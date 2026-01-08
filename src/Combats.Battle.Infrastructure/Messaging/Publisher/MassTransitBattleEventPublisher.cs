@@ -1,4 +1,5 @@
-using Combats.Battle.Application.Ports;
+using Combats.Battle.Application.Abstractions;
+using Combats.Battle.Domain.Results;
 using Combats.Contracts.Battle;
 using MassTransit;
 using Microsoft.Extensions.Logging;
@@ -8,6 +9,7 @@ namespace Combats.Battle.Infrastructure.Messaging.Publisher;
 /// <summary>
 /// MassTransit implementation of IBattleEventPublisher.
 /// Publishes integration events via MassTransit (with outbox support).
+/// Maps domain EndBattleReason to Contracts BattleEndReason.
 /// </summary>
 public class MassTransitBattleEventPublisher : IBattleEventPublisher
 {
@@ -25,16 +27,19 @@ public class MassTransitBattleEventPublisher : IBattleEventPublisher
     public async Task PublishBattleEndedAsync(
         Guid battleId,
         Guid matchId,
-        BattleEndReason reason,
+        EndBattleReason reason,
         Guid? winnerPlayerId,
         DateTime endedAt,
         CancellationToken cancellationToken = default)
     {
+        // Map domain EndBattleReason to Contracts BattleEndReason
+        var contractReason = MapReason(reason);
+
         var battleEnded = new BattleEnded
         {
             BattleId = battleId,
             MatchId = matchId,
-            Reason = reason,
+            Reason = contractReason,
             WinnerPlayerId = winnerPlayerId,
             EndedAt = endedAt,
             Version = 1
@@ -44,7 +49,21 @@ public class MassTransitBattleEventPublisher : IBattleEventPublisher
 
         _logger.LogInformation(
             "Published BattleEnded event for BattleId: {BattleId}, Reason: {Reason}, Winner: {WinnerPlayerId}",
-            battleId, reason, winnerPlayerId);
+            battleId, contractReason, winnerPlayerId);
+    }
+
+    private static BattleEndReason MapReason(EndBattleReason domainReason)
+    {
+        return domainReason switch
+        {
+            EndBattleReason.Normal => BattleEndReason.Normal,
+            EndBattleReason.DoubleForfeit => BattleEndReason.DoubleForfeit,
+            EndBattleReason.Timeout => BattleEndReason.Timeout,
+            EndBattleReason.Cancelled => BattleEndReason.Cancelled,
+            EndBattleReason.AdminForced => BattleEndReason.AdminForced,
+            EndBattleReason.SystemError => BattleEndReason.SystemError,
+            _ => BattleEndReason.SystemError
+        };
     }
 }
 

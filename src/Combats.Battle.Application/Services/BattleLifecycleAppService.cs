@@ -1,5 +1,7 @@
-using Combats.Battle.Application.Ports;
+using Combats.Battle.Application.Abstractions;
 using Combats.Battle.Application.Rules;
+using Combats.Battle.Domain.Model;
+using Combats.Battle.Domain.Rules;
 using Combats.Contracts.Battle;
 using Microsoft.Extensions.Logging;
 
@@ -64,26 +66,24 @@ public class BattleLifecycleAppService
         var initialMaxHpA = staminaA * hpPerStamina;
         var initialMaxHpB = staminaB * hpPerStamina;
 
-        var initialState = new BattleStateView
-        {
-            BattleId = battleId,
-            MatchId = message.MatchId,
-            PlayerAId = message.PlayerAId,
-            PlayerBId = message.PlayerBId,
-            Ruleset = normalizedRuleset,
-            Phase = BattlePhaseView.ArenaOpen,
-            TurnIndex = 0,
-            DeadlineUtc = _clock.UtcNow, // ArenaOpen deadline is meaningless but consistent
-            NoActionStreakBoth = 0,
-            LastResolvedTurnIndex = 0,
-            Version = 1,
-            PlayerAHp = initialMaxHpA,
-            PlayerBHp = initialMaxHpB,
-            PlayerAStrength = strengthA,
-            PlayerAStamina = staminaA,
-            PlayerBStrength = strengthB,
-            PlayerBStamina = staminaB
-        };
+        // Create domain state
+        var playerAStats = new PlayerStats(strengthA, staminaA);
+        var playerBStats = new PlayerStats(strengthB, staminaB);
+        var playerA = new PlayerState(message.PlayerAId, initialMaxHpA, playerAStats);
+        var playerB = new PlayerState(message.PlayerBId, initialMaxHpB, playerBStats);
+
+        var initialState = new BattleDomainState(
+            battleId,
+            message.MatchId,
+            message.PlayerAId,
+            message.PlayerBId,
+            normalizedRuleset,
+            BattlePhase.ArenaOpen,
+            turnIndex: 0,
+            noActionStreakBoth: 0,
+            lastResolvedTurnIndex: 0,
+            playerA,
+            playerB);
 
         // Idempotent initialization
         var initialized = await _stateStore.TryInitializeBattleAsync(battleId, initialState, cancellationToken);

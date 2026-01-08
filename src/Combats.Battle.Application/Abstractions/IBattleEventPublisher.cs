@@ -1,6 +1,6 @@
-using Combats.Contracts.Battle;
+using Combats.Battle.Domain.Results;
 
-namespace Combats.Battle.Application.Ports;
+namespace Combats.Battle.Application.Abstractions;
 
 /// <summary>
 /// Port interface for publishing integration events.
@@ -11,11 +11,12 @@ public interface IBattleEventPublisher
     Task PublishBattleEndedAsync(
         Guid battleId,
         Guid matchId,
-        BattleEndReason reason,
+        EndBattleReason reason,
         Guid? winnerPlayerId,
         DateTime endedAt,
         CancellationToken cancellationToken = default);
 }
+
 
 
 

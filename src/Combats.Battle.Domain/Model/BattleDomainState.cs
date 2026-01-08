@@ -1,4 +1,4 @@
-using Combats.Contracts.Battle;
+using Combats.Battle.Domain.Rules;
 
 namespace Combats.Battle.Domain.Model;
 

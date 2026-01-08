@@ -1,4 +1,6 @@
-using Combats.Battle.Application.Ports;
+using Combats.Battle.Application.Abstractions;
+using Combats.Battle.Application.ReadModels;
+using Combats.Battle.Domain.Model;
 using Microsoft.Extensions.Logging;
 
 namespace Combats.Battle.Application.Protocol;
@@ -31,13 +33,13 @@ public class PlayerActionNormalizer
     /// Returns normalized payload string (empty string = NoAction).
     /// </summary>
     public string NormalizeActionPayload(
-        BattleStateView state,
+        BattleSnapshot state,
         int clientTurnIndex,
         string? actionPayload,
         Guid playerId)
     {
         // Validate phase: must be TurnOpen
-        if (state.Phase != BattlePhaseView.TurnOpen)
+        if (state.Phase != BattlePhase.TurnOpen)
         {
             _logger.LogWarning(
                 "Invalid phase for action submission: BattleId: {BattleId}, Phase: {Phase}, PlayerId: {PlayerId}, TurnIndex: {TurnIndex}",
@@ -89,4 +91,5 @@ public class PlayerActionNormalizer
         }
     }
 }
+
 

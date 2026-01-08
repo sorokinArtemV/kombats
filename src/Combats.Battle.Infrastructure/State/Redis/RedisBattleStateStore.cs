@@ -1,5 +1,7 @@
 using System.Text.Json;
-using Combats.Battle.Application.Ports;
+using Combats.Battle.Application.Abstractions;
+using Combats.Battle.Application.ReadModels;
+using Combats.Battle.Domain.Model;
 using Combats.Battle.Infrastructure.State.Redis.Mapping;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -8,7 +10,7 @@ namespace Combats.Battle.Infrastructure.State.Redis;
 
 /// <summary>
 /// Infrastructure implementation of IBattleStateStore using Redis.
-/// Maps between Infrastructure BattleState and Application BattleStateView.
+/// Maps between Infrastructure BattleState and Domain/Application models.
 /// </summary>
 public class RedisBattleStateStore : IBattleStateStore
 {
@@ -36,14 +38,15 @@ public class RedisBattleStateStore : IBattleStateStore
 
     public async Task<bool> TryInitializeBattleAsync(
         Guid battleId, 
-        BattleStateView initialState, 
+        BattleDomainState initialState, 
         CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
         var key = GetStateKey(battleId);
 
-        // Convert Application view to Infrastructure state
-        var state = StoredStateMapper.FromView(initialState);
+        // Convert Domain state to Infrastructure storage model
+        var deadlineUtc = DateTime.UtcNow; // ArenaOpen deadline is meaningless but consistent
+        var state = StoredStateMapper.FromDomainState(initialState, deadlineUtc, version: 1);
 
         // Use SETNX for idempotent initialization
         var json = JsonSerializer.Serialize(state);
@@ -67,7 +70,7 @@ public class RedisBattleStateStore : IBattleStateStore
         return setResult;
     }
 
-    public async Task<BattleStateView?> GetStateAsync(Guid battleId, CancellationToken cancellationToken = default)
+    public async Task<BattleSnapshot?> GetStateAsync(Guid battleId, CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
         var key = GetStateKey(battleId);
@@ -85,7 +88,7 @@ public class RedisBattleStateStore : IBattleStateStore
                     battleId);
                 throw new InvalidOperationException($"Deserialized battle state is null for BattleId: {battleId}");
             }
-            return StoredStateMapper.ToView(state);
+            return StoredStateMapper.ToSnapshot(state);
         }
         catch (JsonException ex)
         {

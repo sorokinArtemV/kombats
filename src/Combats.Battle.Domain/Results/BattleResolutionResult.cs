@@ -1,7 +1,7 @@
 using Combats.Battle.Domain.Events;
 using Combats.Battle.Domain.Model;
 
-namespace Combats.Battle.Domain.Engine;
+namespace Combats.Battle.Domain.Results;
 
 /// <summary>
 /// Result of resolving a turn in the battle engine.

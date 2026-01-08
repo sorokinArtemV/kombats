@@ -1,4 +1,4 @@
-namespace Combats.Battle.Application.Ports;
+namespace Combats.Battle.Application.Abstractions;
 
 /// <summary>
 /// Result of attempting to end a battle and mark it resolved.
@@ -21,4 +21,5 @@ public enum EndBattleCommitResult
     /// </summary>
     NotCommitted = 0
 }
+
 

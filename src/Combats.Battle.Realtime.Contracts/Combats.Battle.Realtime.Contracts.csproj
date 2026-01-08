@@ -5,7 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
+    <RootNamespace>Combats.Battle.Realtime.Contracts</RootNamespace>
   </PropertyGroup>
 
-
 </Project>
+

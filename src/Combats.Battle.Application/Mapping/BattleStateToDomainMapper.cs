@@ -1,62 +1,51 @@
-using Combats.Battle.Application.Ports;
-using Combats.Battle.Domain;
+using Combats.Battle.Application.ReadModels;
 using Combats.Battle.Domain.Model;
 
 namespace Combats.Battle.Application.Mapping;
 
 /// <summary>
-/// Mapper between Application BattleStateView and Domain BattleDomainState.
-/// Application layer owns this mapping (Application View -> Domain State).
+/// Mapper between Application read models and Domain models.
 /// </summary>
 public static class BattleStateToDomainMapper
 {
     /// <summary>
-    /// Maps Application BattleStateView to Domain BattleDomainState.
+    /// Maps Application BattleSnapshot to Domain BattleDomainState.
     /// </summary>
-    public static BattleDomainState ToDomainState(BattleStateView state)
+    public static BattleDomainState ToDomainState(BattleSnapshot snapshot)
     {
         // Get player stats (defaults if not set)
-        var playerAStrength = state.PlayerAStrength ?? 10;
-        var playerAStamina = state.PlayerAStamina ?? 10;
-        var playerBStrength = state.PlayerBStrength ?? 10;
-        var playerBStamina = state.PlayerBStamina ?? 10;
+        var playerAStrength = snapshot.PlayerAStrength ?? 10;
+        var playerAStamina = snapshot.PlayerAStamina ?? 10;
+        var playerBStrength = snapshot.PlayerBStrength ?? 10;
+        var playerBStamina = snapshot.PlayerBStamina ?? 10;
         
         // Calculate max HP from stamina
-        var playerAMaxHp = playerAStamina * (state.Ruleset.HpPerStamina > 0 ? state.Ruleset.HpPerStamina : 10);
-        var playerBMaxHp = playerBStamina * (state.Ruleset.HpPerStamina > 0 ? state.Ruleset.HpPerStamina : 10);
+        var playerAMaxHp = playerAStamina * snapshot.Ruleset.HpPerStamina;
+        var playerBMaxHp = playerBStamina * snapshot.Ruleset.HpPerStamina;
         
         // Get current HP (or max if not set)
-        var playerAHp = state.PlayerAHp ?? playerAMaxHp;
-        var playerBHp = state.PlayerBHp ?? playerBMaxHp;
+        var playerAHp = snapshot.PlayerAHp ?? playerAMaxHp;
+        var playerBHp = snapshot.PlayerBHp ?? playerBMaxHp;
 
         var playerAStats = new PlayerStats(playerAStrength, playerAStamina);
         var playerBStats = new PlayerStats(playerBStrength, playerBStamina);
         
-        var playerA = new PlayerState(state.PlayerAId, playerAMaxHp, playerAHp, playerAStats);
-        var playerB = new PlayerState(state.PlayerBId, playerBMaxHp, playerBHp, playerBStats);
-
-        // Map phase enum
-        var domainPhase = state.Phase switch
-        {
-            BattlePhaseView.ArenaOpen => BattlePhase.ArenaOpen,
-            BattlePhaseView.TurnOpen => BattlePhase.TurnOpen,
-            BattlePhaseView.Resolving => BattlePhase.Resolving,
-            BattlePhaseView.Ended => BattlePhase.Ended,
-            _ => throw new ArgumentException($"Unknown phase: {state.Phase}")
-        };
+        var playerA = new PlayerState(snapshot.PlayerAId, playerAMaxHp, playerAHp, playerAStats);
+        var playerB = new PlayerState(snapshot.PlayerBId, playerBMaxHp, playerBHp, playerBStats);
 
         return new BattleDomainState(
-            state.BattleId,
-            state.MatchId,
-            state.PlayerAId,
-            state.PlayerBId,
-            state.Ruleset,
-            domainPhase,
-            state.TurnIndex,
-            state.NoActionStreakBoth,
-            state.LastResolvedTurnIndex,
+            snapshot.BattleId,
+            snapshot.MatchId,
+            snapshot.PlayerAId,
+            snapshot.PlayerBId,
+            snapshot.Ruleset,
+            snapshot.Phase,
+            snapshot.TurnIndex,
+            snapshot.NoActionStreakBoth,
+            snapshot.LastResolvedTurnIndex,
             playerA,
             playerB);
     }
 }
+
 

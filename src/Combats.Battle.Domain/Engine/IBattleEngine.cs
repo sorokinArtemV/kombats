@@ -1,4 +1,5 @@
 using Combats.Battle.Domain.Model;
+using Combats.Battle.Domain.Results;
 
 namespace Combats.Battle.Domain.Engine;
 
