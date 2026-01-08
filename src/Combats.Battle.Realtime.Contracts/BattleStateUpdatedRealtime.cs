@@ -20,3 +20,4 @@ public record BattleStateUpdatedRealtime
     public int? PlayerBHp { get; init; }
 }
 
+

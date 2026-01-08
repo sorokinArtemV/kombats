@@ -32,3 +32,4 @@ public sealed class BattleSnapshot
     public int? PlayerBStamina { get; init; }
 }
 
+

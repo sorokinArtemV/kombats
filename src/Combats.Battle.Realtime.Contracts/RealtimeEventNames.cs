@@ -14,3 +14,4 @@ public static class RealtimeEventNames
     public const string BattleEnded = "BattleEnded";
 }
 
+

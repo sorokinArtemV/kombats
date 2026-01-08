@@ -11,3 +11,4 @@ public record BattleEndedRealtime
     public DateTimeOffset EndedAt { get; init; }
 }
 
+

@@ -10,3 +10,4 @@ public record BattleReadyRealtime
     public Guid PlayerBId { get; init; }
 }
 
+

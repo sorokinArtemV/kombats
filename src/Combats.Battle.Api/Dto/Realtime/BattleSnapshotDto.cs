@@ -19,3 +19,4 @@ public class BattleSnapshotDto
     public int? PlayerBHp { get; init; }
 }
 
+

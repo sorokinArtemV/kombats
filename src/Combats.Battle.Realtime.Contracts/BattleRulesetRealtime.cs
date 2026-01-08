@@ -11,3 +11,4 @@ public record BattleRulesetRealtime
     public int? NoActionLimit { get; init; }
 }
 
+

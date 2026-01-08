@@ -15,3 +15,4 @@ public enum BattleEndReasonRealtime
     Unknown = 99 // For cases where reason cannot be determined
 }
 
+
