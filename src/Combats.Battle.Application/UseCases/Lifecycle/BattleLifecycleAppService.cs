@@ -57,19 +57,23 @@ public class BattleLifecycleAppService
         // Use defaults if profile not found (should not happen, but defensive)
         var strengthA = profileA?.Strength ?? 10;
         var staminaA = profileA?.Stamina ?? 10;
+        var agilityA = profileA?.Agility ?? 0;
+        var intuitionA = profileA?.Intuition ?? 0;
         var strengthB = profileB?.Strength ?? 10;
         var staminaB = profileB?.Stamina ?? 10;
-
-        // Use normalized ruleset for HP calculation
-        var hpPerStamina = normalizedRuleset.HpPerStamina;
-        var initialMaxHpA = staminaA * hpPerStamina;
-        var initialMaxHpB = staminaB * hpPerStamina;
+        var agilityB = profileB?.Agility ?? 0;
+        var intuitionB = profileB?.Intuition ?? 0;
 
         // Create domain state
-        var playerAStats = new PlayerStats(strengthA, staminaA);
-        var playerBStats = new PlayerStats(strengthB, staminaB);
-        var playerA = new PlayerState(message.PlayerAId, initialMaxHpA, playerAStats);
-        var playerB = new PlayerState(message.PlayerBId, initialMaxHpB, playerBStats);
+        var playerAStats = new PlayerStats(strengthA, staminaA, agilityA, intuitionA);
+        var playerBStats = new PlayerStats(strengthB, staminaB, agilityB, intuitionB);
+
+        // Compute HP using CombatMath (ONCE at battle creation)
+        var derivedA = CombatMath.ComputeDerived(playerAStats, normalizedRuleset.Balance);
+        var derivedB = CombatMath.ComputeDerived(playerBStats, normalizedRuleset.Balance);
+
+        var playerA = new PlayerState(message.PlayerAId, derivedA.HpMax, playerAStats);
+        var playerB = new PlayerState(message.PlayerBId, derivedB.HpMax, playerBStats);
 
         var initialState = new BattleDomainState(
             battleId,

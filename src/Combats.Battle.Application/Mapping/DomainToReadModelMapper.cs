@@ -27,8 +27,12 @@ public static class DomainToReadModelMapper
             PlayerBHp = domainState.PlayerB.CurrentHp,
             PlayerAStrength = domainState.PlayerA.Stats.Strength,
             PlayerAStamina = domainState.PlayerA.Stats.Stamina,
+            PlayerAAgility = domainState.PlayerA.Stats.Agility,
+            PlayerAIntuition = domainState.PlayerA.Stats.Intuition,
             PlayerBStrength = domainState.PlayerB.Stats.Strength,
-            PlayerBStamina = domainState.PlayerB.Stats.Stamina
+            PlayerBStamina = domainState.PlayerB.Stats.Stamina,
+            PlayerBAgility = domainState.PlayerB.Stats.Agility,
+            PlayerBIntuition = domainState.PlayerB.Stats.Intuition
         };
     }
 }

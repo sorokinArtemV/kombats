@@ -28,8 +28,12 @@ public sealed class BattleSnapshot
     // Player stats
     public int? PlayerAStrength { get; init; }
     public int? PlayerAStamina { get; init; }
+    public int? PlayerAAgility { get; init; }
+    public int? PlayerAIntuition { get; init; }
     public int? PlayerBStrength { get; init; }
     public int? PlayerBStamina { get; init; }
+    public int? PlayerBAgility { get; init; }
+    public int? PlayerBIntuition { get; init; }
 }
 
 

@@ -1,22 +1,21 @@
 using Combats.Battle.Application.Abstractions;
 using Combats.Battle.Application.UseCases.Lifecycle;
 using Combats.Battle.Application.UseCases.Turns;
-using Combats.Battle.Domain;
 using Combats.Battle.Domain.Engine;
-using Combats.Battle.Infrastructure.Messaging;
+using Combats.Battle.Domain.Rules;
 using Combats.Battle.Infrastructure.Messaging.Consumers;
-using Combats.Battle.Infrastructure.Persistence.EF;
 using Combats.Battle.Infrastructure.Persistence.EF.DbContext;
 using Combats.Battle.Infrastructure.Persistence.EF.Projections;
-using Combats.Battle.Infrastructure.Messaging;
+using Combats.Battle.Infrastructure.Messaging.Publisher;
 using Combats.Battle.Infrastructure.Profiles;
+using Combats.Battle.Infrastructure.Realtime;
 using Combats.Battle.Infrastructure.Realtime.SignalR;
+using Combats.Battle.Infrastructure.Rules;
 using Combats.Battle.Infrastructure.State.Redis;
 using Combats.Battle.Infrastructure.Time;
 using Combats.Battle.Infrastructure.Workers;
 using Combats.Contracts.Battle;
 using Combats.Infrastructure.Messaging.DependencyInjection;
-using MassTransitBattleEventPublisher = Combats.Battle.Infrastructure.Messaging.Publisher.MassTransitBattleEventPublisher;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -46,7 +45,7 @@ public static class BattleServiceCollectionExtensions
         services.AddScoped<PlayerActionNormalizer>();
         services.AddScoped<BattleLifecycleAppService>();
         services.AddScoped<BattleTurnAppService>();
-
+        
         // Register Application abstractions (ports) - implementations registered in AddBattleInfrastructure
         services.AddSingleton<IClock, SystemClock>();
 
@@ -69,8 +68,7 @@ public static class BattleServiceCollectionExtensions
         });
 
         // Configure Redis
-        var redisConnectionString = configuration.GetConnectionString("Redis")
-                                   ?? "localhost:6379";
+        var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
         services.AddSingleton<IConnectionMultiplexer>(sp =>
         {
             return ConnectionMultiplexer.Connect(redisConnectionString);
@@ -80,9 +78,19 @@ public static class BattleServiceCollectionExtensions
         services.Configure<BattleRedisOptions>(
             configuration.GetSection(BattleRedisOptions.SectionName));
 
+        // Configure CombatBalance options
+        services.Configure<CombatBalanceOptions>(
+            configuration.GetSection(CombatBalanceOptions.SectionName));
+
         // Register Application ports (implemented by Infrastructure)
         services.AddScoped<IBattleStateStore, RedisBattleStateStore>();
         services.AddScoped<ICombatProfileProvider, DatabaseCombatProfileProvider>();
+        services.AddSingleton<ICombatBalanceProvider, CombatBalanceProvider>();
+        
+        services.AddScoped<IBattleRealtimeNotifier, NoOpBattleRealtimeNotifier>();
+
+        // Register IRandomProvider
+        services.AddSingleton<IRandomProvider, SystemRandomProvider>();
 
         // Configure messaging with typed DbContext for outbox/inbox support
         services.AddMessaging<BattleDbContext>(

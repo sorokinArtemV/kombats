@@ -1,5 +1,6 @@
 using Combats.Battle.Application.ReadModels;
 using Combats.Battle.Domain.Model;
+using Combats.Battle.Domain.Rules;
 
 namespace Combats.Battle.Application.Mapping;
 
@@ -16,22 +17,26 @@ public static class BattleStateToDomainMapper
         // Get player stats (defaults if not set)
         var playerAStrength = snapshot.PlayerAStrength ?? 10;
         var playerAStamina = snapshot.PlayerAStamina ?? 10;
+        var playerAAgility = snapshot.PlayerAAgility ?? 0;
+        var playerAIntuition = snapshot.PlayerAIntuition ?? 0;
         var playerBStrength = snapshot.PlayerBStrength ?? 10;
         var playerBStamina = snapshot.PlayerBStamina ?? 10;
+        var playerBAgility = snapshot.PlayerBAgility ?? 0;
+        var playerBIntuition = snapshot.PlayerBIntuition ?? 0;
         
-        // Calculate max HP from stamina
-        var playerAMaxHp = playerAStamina * snapshot.Ruleset.HpPerStamina;
-        var playerBMaxHp = playerBStamina * snapshot.Ruleset.HpPerStamina;
+        var playerAStats = new PlayerStats(playerAStrength, playerAStamina, playerAAgility, playerAIntuition);
+        var playerBStats = new PlayerStats(playerBStrength, playerBStamina, playerBAgility, playerBIntuition);
+        
+        // Compute HP using CombatMath (derived stats)
+        var derivedA = CombatMath.ComputeDerived(playerAStats, snapshot.Ruleset.Balance);
+        var derivedB = CombatMath.ComputeDerived(playerBStats, snapshot.Ruleset.Balance);
         
         // Get current HP (or max if not set)
-        var playerAHp = snapshot.PlayerAHp ?? playerAMaxHp;
-        var playerBHp = snapshot.PlayerBHp ?? playerBMaxHp;
-
-        var playerAStats = new PlayerStats(playerAStrength, playerAStamina);
-        var playerBStats = new PlayerStats(playerBStrength, playerBStamina);
+        var playerAHp = snapshot.PlayerAHp ?? derivedA.HpMax;
+        var playerBHp = snapshot.PlayerBHp ?? derivedB.HpMax;
         
-        var playerA = new PlayerState(snapshot.PlayerAId, playerAMaxHp, playerAHp, playerAStats);
-        var playerB = new PlayerState(snapshot.PlayerBId, playerBMaxHp, playerBHp, playerBStats);
+        var playerA = new PlayerState(snapshot.PlayerAId, derivedA.HpMax, playerAHp, playerAStats);
+        var playerB = new PlayerState(snapshot.PlayerBId, derivedB.HpMax, playerBHp, playerBStats);
 
         return new BattleDomainState(
             snapshot.BattleId,
