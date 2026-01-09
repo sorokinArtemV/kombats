@@ -1,16 +1,18 @@
-using Combats.Battle.Api.Dto.Realtime;
 using Combats.Battle.Application.Abstractions;
+using Combats.Battle.Application.UseCases.Turns;
+using Combats.Battle.Domain.Model;
+using Combats.Battle.Realtime.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 using System.Security.Claims;
-using Combats.Battle.Application.Services;
-using Combats.Battle.Domain.Model;
 
-namespace Combats.Battle.Api.Hubs;
+namespace Combats.Battle.Infrastructure.Realtime.SignalR;
 
 /// <summary>
 /// SignalR hub for battle operations.
 /// Thin adapter that delegates to Application services.
+/// Located in Infrastructure to allow Infrastructure to depend on it without referencing Api.
 /// </summary>
 [Authorize]
 public class BattleHub : Hub
@@ -29,7 +31,7 @@ public class BattleHub : Hub
         _logger = logger;
     }
 
-    public async Task<BattleSnapshotDto> JoinBattle(Guid battleId)
+    public async Task<BattleSnapshotRealtime> JoinBattle(Guid battleId)
     {
         var userIdClaim = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value 
                          ?? Context.User?.FindFirst("sub")?.Value;
@@ -69,31 +71,45 @@ public class BattleHub : Hub
         }
 
         // Determine ended reason if battle is ended
-        string? endedReason = null;
+        BattleEndReasonRealtime? endedReason = null;
         if (state.Phase == BattlePhase.Ended)
         {
             // For now, we infer DoubleForfeit if NoActionStreakBoth >= NoActionLimit
             // In production, this should be stored in BattleState or retrieved from Postgres
             if (state.NoActionStreakBoth >= state.Ruleset.NoActionLimit)
             {
-                endedReason = "DoubleForfeit";
+                endedReason = BattleEndReasonRealtime.DoubleForfeit;
             }
             else
             {
-                endedReason = "Unknown"; // Fallback if ended for other reasons
+                endedReason = BattleEndReasonRealtime.Unknown; // Fallback if ended for other reasons
             }
         }
 
-        // Return typed snapshot DTO with DeadlineUtc as ISO string
-        return new BattleSnapshotDto
+        // Map BattlePhase to BattlePhaseRealtime
+        var phaseRealtime = state.Phase switch
+        {
+            BattlePhase.ArenaOpen => BattlePhaseRealtime.ArenaOpen,
+            BattlePhase.TurnOpen => BattlePhaseRealtime.TurnOpen,
+            BattlePhase.Resolving => BattlePhaseRealtime.Resolving,
+            BattlePhase.Ended => BattlePhaseRealtime.Ended,
+            _ => throw new InvalidOperationException($"Unknown BattlePhase: {state.Phase}")
+        };
+
+        // Return typed snapshot using realtime contract
+        return new BattleSnapshotRealtime
         {
             BattleId = state.BattleId,
             PlayerAId = state.PlayerAId,
             PlayerBId = state.PlayerBId,
-            Ruleset = state.Ruleset,
-            Phase = state.Phase.ToString(),
+            Ruleset = new BattleRulesetRealtime
+            {
+                TurnSeconds = state.Ruleset.TurnSeconds,
+                NoActionLimit = state.Ruleset.NoActionLimit
+            },
+            Phase = phaseRealtime,
             TurnIndex = state.TurnIndex,
-            DeadlineUtc = state.DeadlineUtc.ToUniversalTime().ToString("O"),
+            DeadlineUtc = new DateTimeOffset(state.DeadlineUtc.ToUniversalTime(), TimeSpan.Zero),
             NoActionStreakBoth = state.NoActionStreakBoth,
             LastResolvedTurnIndex = state.LastResolvedTurnIndex,
             EndedReason = endedReason,

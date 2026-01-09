@@ -332,16 +332,18 @@
             // события сервера
             connection.on("TurnOpened", (data) => {
                 log(`TurnOpened: Turn ${data.turnIndex}, Deadline: ${new Date(data.deadlineUtc).toLocaleTimeString()}`, 'success');
-                currentTurnIndex = data.turnIndex;
-                battleState = data;
-                updateBattleStateDisplay(data);
-            });
 
-            connection.on("BattleStateUpdated", (data) => {
-                log(`BattleStateUpdated: Turn ${data.turnIndex}, Phase: ${data.phase}`, 'info');
-                battleState = data;
+                // НЕ battleState = data;
+                battleState = battleState ?? {};
+                battleState.battleId = data.battleId;
+                battleState.turnIndex = data.turnIndex;
+                battleState.deadlineUtc = data.deadlineUtc;
+
+                // можно сразу выставить TurnOpen, раз это событие TurnOpened
+                battleState.phase = 1;
+
                 currentTurnIndex = data.turnIndex;
-                updateBattleStateDisplay(data);
+                updateBattleStateDisplay(battleState);
             });
 
             connection.on("TurnResolved", (data) => {
@@ -492,7 +494,7 @@
         const myHp = isMyPlayerA ? (state.playerAHp ?? 100) : (state.playerBHp ?? 100);
         const opponentHp = isMyPlayerA ? (state.playerBHp ?? 100) : (state.playerAHp ?? 100);
 
-        const canSendAction = state.phase === 'TurnOpen';
+        const canSendAction = state.phase === 'TurnOpen' || state.phase === 1;
         document.getElementById('sendActionBtn').disabled = !canSendAction || !connection;
 
         const deadline = state.deadlineUtc ? new Date(state.deadlineUtc).toLocaleTimeString() : 'N/A';

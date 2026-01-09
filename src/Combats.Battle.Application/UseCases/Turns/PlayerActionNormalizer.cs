@@ -3,7 +3,7 @@ using Combats.Battle.Application.ReadModels;
 using Combats.Battle.Domain.Model;
 using Microsoft.Extensions.Logging;
 
-namespace Combats.Battle.Application.Protocol;
+namespace Combats.Battle.Application.UseCases.Turns;
 
 /// <summary>
 /// Application-layer service for normalizing player action payloads.
@@ -91,5 +91,6 @@ public class PlayerActionNormalizer
         }
     }
 }
+
 
 

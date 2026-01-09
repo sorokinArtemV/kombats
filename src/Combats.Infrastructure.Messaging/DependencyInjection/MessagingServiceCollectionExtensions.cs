@@ -159,15 +159,6 @@ public static class MessagingServiceCollectionExtensions
         // Register MassTransit
         services.AddMassTransit(x =>
         {
-            // Add EF Core outbox if enabled (requires compile-time generic, so we handle it in typed overload)
-            // For non-typed path, outbox registration is skipped (validation above ensures error is thrown)
-
-            // Add delayed message scheduler if enabled
-            if (options.Scheduler.Enabled)
-            {
-                x.AddDelayedMessageScheduler();
-            }
-            
             // Register consumers
             configureConsumers(x);
 
@@ -280,13 +271,6 @@ public static class MessagingServiceCollectionExtensions
                 });
             }
             
-            
-            // Add delayed message scheduler if enabled
-            if (options.Scheduler.Enabled)
-            {
-                x.AddDelayedMessageScheduler();
-            }
-
             // Register consumers
             configureConsumers(x);
 

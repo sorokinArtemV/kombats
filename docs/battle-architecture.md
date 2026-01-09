@@ -278,3 +278,6 @@ else if (endResult == EndBattleCommitResult.AlreadyEnded)
 
 
 
+
+
+

@@ -1,9 +1,10 @@
 namespace Combats.Battle.Realtime.Contracts;
 
 /// <summary>
-/// Realtime contract for BattleStateUpdated event.
+/// Realtime contract for BattleSnapshot (initial state when joining a battle).
+/// This is returned synchronously from JoinBattle hub method.
 /// </summary>
-public record BattleStateUpdatedRealtime
+public record BattleSnapshotRealtime
 {
     public Guid BattleId { get; init; }
     public Guid PlayerAId { get; init; }
@@ -19,8 +20,6 @@ public record BattleStateUpdatedRealtime
     public int? PlayerAHp { get; init; }
     public int? PlayerBHp { get; init; }
 }
-
-
 
 
 

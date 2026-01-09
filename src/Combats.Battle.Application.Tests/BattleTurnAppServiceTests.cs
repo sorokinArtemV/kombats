@@ -1,7 +1,6 @@
 using Combats.Battle.Application.Abstractions;
 using Combats.Battle.Application.ReadModels;
-using Combats.Battle.Application.Services;
-using Combats.Battle.Application.Protocol;
+using Combats.Battle.Application.UseCases.Turns;
 using Combats.Battle.Domain.Engine;
 using Combats.Battle.Domain.Events;
 using Combats.Battle.Domain.Model;

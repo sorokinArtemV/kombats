@@ -1,13 +1,10 @@
-using Combats.Battle.Application.Protocol;
-using Combats.Battle.Application.Rules;
-using Combats.Battle.Api.Hubs;
+using Combats.Battle.Application.UseCases.Lifecycle;
+using Combats.Battle.Application.UseCases.Turns;
 using Combats.Battle.Api.Middleware;
-using Combats.Battle.Api.Realtime;
 using Combats.Battle.Infrastructure.Realtime.SignalR;
 using Microsoft.AspNetCore.SignalR;
 using Combats.Battle.Api.Workers;
 using Combats.Battle.Application.Abstractions;
-using Combats.Battle.Application.Services;
 using Combats.Battle.Domain;
 using Combats.Battle.Domain.Engine;
 using Combats.Battle.Infrastructure.Messaging.Consumers;
@@ -59,14 +56,8 @@ builder.Services.AddScoped<IBattleEngine, BattleEngine>();
 
 // Register Application ports (implemented by Infrastructure)
 builder.Services.AddScoped<IBattleStateStore, RedisBattleStateStore>();
-// SignalRBattleRealtimeNotifier uses IHubContext<Hub> - provide adapter from IHubContext<BattleHub>
-builder.Services.AddScoped<IBattleRealtimeNotifier>(sp =>
-{
-    var battleHubContext = sp.GetRequiredService<IHubContext<BattleHub>>();
-    var hubContext = new HubContextAdapter(battleHubContext);
-    var logger = sp.GetRequiredService<ILogger<SignalRBattleRealtimeNotifier>>();
-    return new SignalRBattleRealtimeNotifier(hubContext, logger);
-});
+// SignalRBattleRealtimeNotifier uses IHubContext<BattleHub> directly
+builder.Services.AddScoped<IBattleRealtimeNotifier, SignalRBattleRealtimeNotifier>();
 builder.Services.AddScoped<IBattleEventPublisher, MassTransitBattleEventPublisher>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<ICombatProfileProvider, DatabaseCombatProfileProvider>();
@@ -125,8 +116,8 @@ app.UseStaticFiles();
 app.UseAuthorization();
 app.MapControllers();
 
-// Map SignalR hub
-app.MapHub<Combats.Battle.Api.Hubs.BattleHub>("/battlehub");
+// Map SignalR hub (now in Infrastructure)
+app.MapHub<BattleHub>("/battlehub");
 
 // Ensure database is created/migrated
 using (var scope = app.Services.CreateScope())

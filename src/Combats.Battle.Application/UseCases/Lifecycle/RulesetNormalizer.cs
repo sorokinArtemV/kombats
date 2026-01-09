@@ -1,7 +1,7 @@
 using Combats.Battle.Domain.Rules;
 using Combats.Contracts.Battle;
 
-namespace Combats.Battle.Application.Rules;
+namespace Combats.Battle.Application.UseCases.Lifecycle;
 
 /// <summary>
 /// Normalizes and validates Ruleset instances.
@@ -82,5 +82,6 @@ public class RulesetNormalizer
             damagePerStrength: _defaults.DefaultDamagePerStrength);
     }
 }
+
 
 

@@ -1,4 +1,4 @@
-using Combats.Battle.Application.Policies.Time;
+using Combats.Battle.Application.UseCases.Turns;
 using Xunit;
 
 namespace Combats.Battle.Application.Tests;

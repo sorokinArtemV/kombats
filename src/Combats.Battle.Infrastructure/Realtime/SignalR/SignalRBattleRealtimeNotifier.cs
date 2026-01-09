@@ -9,15 +9,15 @@ namespace Combats.Battle.Infrastructure.Realtime.SignalR;
 /// <summary>
 /// SignalR implementation of IBattleRealtimeNotifier.
 /// Maps Application parameters to typed SignalR contracts.
-/// Uses IHubContext&lt;Hub&gt; base class to avoid dependency on Api.Hubs.BattleHub.
+/// Uses IHubContext&lt;BattleHub&gt; to reference the hub type directly.
 /// </summary>
 public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
 {
-    private readonly IHubContext<Hub> _hubContext;
+    private readonly IHubContext<BattleHub> _hubContext;
     private readonly ILogger<SignalRBattleRealtimeNotifier> _logger;
 
     public SignalRBattleRealtimeNotifier(
-        IHubContext<Hub> hubContext,
+        IHubContext<BattleHub> hubContext,
         ILogger<SignalRBattleRealtimeNotifier> logger)
     {
         _hubContext = hubContext;

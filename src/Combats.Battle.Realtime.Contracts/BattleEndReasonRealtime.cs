@@ -16,3 +16,6 @@ public enum BattleEndReasonRealtime
 }
 
 
+
+
+

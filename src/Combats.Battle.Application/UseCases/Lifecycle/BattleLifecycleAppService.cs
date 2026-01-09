@@ -1,11 +1,10 @@
 using Combats.Battle.Application.Abstractions;
-using Combats.Battle.Application.Rules;
 using Combats.Battle.Domain.Model;
 using Combats.Battle.Domain.Rules;
 using Combats.Contracts.Battle;
 using Microsoft.Extensions.Logging;
 
-namespace Combats.Battle.Application.Services;
+namespace Combats.Battle.Application.UseCases.Lifecycle;
 
 /// <summary>
 /// Application service for battle lifecycle operations.
@@ -127,5 +126,6 @@ public class BattleLifecycleAppService
             battleId, authoritativeDeadline);
     }
 }
+
 
 

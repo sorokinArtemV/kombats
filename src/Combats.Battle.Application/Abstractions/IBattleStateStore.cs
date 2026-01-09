@@ -36,6 +36,11 @@ public interface IBattleStateStore
     Task AddBattleDeadlineAsync(Guid battleId, DateTime deadlineUtc, CancellationToken cancellationToken = default);
     Task RemoveBattleDeadlineAsync(Guid battleId, CancellationToken cancellationToken = default);
     Task<List<Guid>> GetDueBattlesAsync(DateTime nowUtc, int limit, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Gets the next upcoming deadline from the deadlines ZSET.
+    /// Returns null if there are no active deadlines.
+    /// </summary>
+    Task<DateTime?> GetNextDeadlineUtcAsync(CancellationToken cancellationToken = default);
     Task<ActionStoreResult> StoreActionAsync(Guid battleId, int turnIndex, Guid playerId, string actionPayload, CancellationToken cancellationToken = default);
     Task<(string? PlayerAAction, string? PlayerBAction)> GetActionsAsync(Guid battleId, int turnIndex, Guid playerAId, Guid playerBId, CancellationToken cancellationToken = default);
 }

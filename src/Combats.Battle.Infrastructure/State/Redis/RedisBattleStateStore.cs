@@ -377,6 +377,27 @@ public class RedisBattleStateStore : IBattleStateStore
         return battleIds;
     }
 
+    public async Task<DateTime?> GetNextDeadlineUtcAsync(CancellationToken cancellationToken = default)
+    {
+        var db = _redis.GetDatabase();
+        
+        // ZRANGE battle:deadlines 0 0 WITHSCORES - get the first (lowest score) element with its score
+        var result = await db.SortedSetRangeByRankWithScoresAsync(
+            DeadlinesZSetKey,
+            start: 0,
+            stop: 0,
+            order: Order.Ascending);
+        
+        if (result == null || result.Length == 0)
+        {
+            return null;
+        }
+        
+        var score = result[0].Score;
+        // Score is stored as ticks (long)
+        return new DateTime((long)score, DateTimeKind.Utc);
+    }
+
     public async Task<List<Guid>> GetActiveBattlesAsync(CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();

@@ -1,13 +1,12 @@
 using Combats.Battle.Application.Mapping;
 using Combats.Battle.Application.Abstractions;
-using Combats.Battle.Application.Protocol;
 using Combats.Battle.Domain.Engine;
 using Combats.Battle.Domain.Events;
 using Combats.Battle.Domain.Model;
 using Combats.Battle.Domain.Rules;
 using Microsoft.Extensions.Logging;
 
-namespace Combats.Battle.Application.Services;
+namespace Combats.Battle.Application.UseCases.Turns;
 
 /// <summary>
 /// Application service for battle turn operations: submitting actions and resolving turns.
@@ -384,5 +383,6 @@ public class BattleTurnAppService
         return $"Attack: {attackZone}";
     }
 }
+
 
 

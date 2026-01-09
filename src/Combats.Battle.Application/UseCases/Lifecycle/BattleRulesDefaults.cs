@@ -1,4 +1,4 @@
-namespace Combats.Battle.Application.Rules;
+namespace Combats.Battle.Application.UseCases.Lifecycle;
 
 /// <summary>
 /// Default values and bounds for battle rules configuration.
