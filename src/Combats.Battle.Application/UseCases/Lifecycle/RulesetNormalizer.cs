@@ -1,5 +1,5 @@
-using Combats.Battle.Domain.Rules;
-using Combats.Contracts.Battle;
+using Combats.Battle.Application.Abstractions;
+
 
 namespace Combats.Battle.Application.UseCases.Lifecycle;
 
@@ -12,10 +12,14 @@ namespace Combats.Battle.Application.UseCases.Lifecycle;
 public class RulesetNormalizer
 {
     private readonly BattleRulesDefaults _defaults;
+    private readonly ICombatBalanceProvider _balanceProvider;
 
-    public RulesetNormalizer(BattleRulesDefaults defaults)
+    public RulesetNormalizer(
+        BattleRulesDefaults defaults,
+        ICombatBalanceProvider balanceProvider)
     {
         _defaults = defaults;
+        _balanceProvider = balanceProvider;
     }
 
     /// <summary>
@@ -59,13 +63,17 @@ public class RulesetNormalizer
         else if (damagePerStrength < _defaults.MinDamagePerStrength)
             damagePerStrength = _defaults.MinDamagePerStrength;
 
+        // Get CombatBalance from provider
+        var balance = _balanceProvider.GetBalance();
+
         return new Domain.Rules.Ruleset(
             version: incoming.Version > 0 ? incoming.Version : 1,
             turnSeconds: turnSeconds,
             noActionLimit: noActionLimit,
             seed: incoming.Seed,
             hpPerStamina: hpPerStamina,
-            damagePerStrength: damagePerStrength);
+            damagePerStrength: damagePerStrength,
+            balance: balance);
     }
 
     /// <summary>
@@ -73,13 +81,17 @@ public class RulesetNormalizer
     /// </summary>
     public Domain.Rules.Ruleset CreateDefault()
     {
+        // Get CombatBalance from provider
+        var balance = _balanceProvider.GetBalance();
+
         return new Domain.Rules.Ruleset(
             version: 1,
             turnSeconds: _defaults.DefaultTurnSeconds,
             noActionLimit: _defaults.DefaultNoActionLimit,
             seed: 0, // Should be set by caller if needed
             hpPerStamina: _defaults.DefaultHpPerStamina,
-            damagePerStrength: _defaults.DefaultDamagePerStrength);
+            damagePerStrength: _defaults.DefaultDamagePerStrength,
+            balance: balance);
     }
 }
 

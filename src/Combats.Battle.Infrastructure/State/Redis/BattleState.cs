@@ -30,11 +30,15 @@ public class BattleState
     public int? PlayerAHp { get; set; }
     public int? PlayerBHp { get; set; }
     
-    // Player stats (for fistfight combat)
+    // Player stats (for combat)
     public int? PlayerAStrength { get; set; }
     public int? PlayerAStamina { get; set; }
+    public int? PlayerAAgility { get; set; }
+    public int? PlayerAIntuition { get; set; }
     public int? PlayerBStrength { get; set; }
     public int? PlayerBStamina { get; set; }
+    public int? PlayerBAgility { get; set; }
+    public int? PlayerBIntuition { get; set; }
 
     // Helper methods for DateTime conversion
     public DateTime GetDeadlineUtc() => new DateTime(DeadlineUtcTicks, DateTimeKind.Utc);

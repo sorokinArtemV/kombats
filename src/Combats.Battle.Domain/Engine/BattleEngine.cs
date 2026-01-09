@@ -11,6 +11,13 @@ namespace Combats.Battle.Domain.Engine;
 /// </summary>
 public sealed class BattleEngine : IBattleEngine
 {
+    private readonly IRandomProvider _rng;
+
+    public BattleEngine(IRandomProvider rng)
+    {
+        _rng = rng ?? throw new ArgumentNullException(nameof(rng));
+    }
+
     public BattleResolutionResult ResolveTurn(
         BattleDomainState state,
         PlayerAction playerAAction,
@@ -116,14 +123,16 @@ public sealed class BattleEngine : IBattleEngine
         int damageToB = CalculateDamage(
             normalizedActionA,
             normalizedActionB,
-            playerA.Stats.Strength,
+            playerA.Stats,
+            playerB.Stats,
             state.Ruleset);
 
         // Damage from B to A
         int damageToA = CalculateDamage(
             normalizedActionB,
             normalizedActionA,
-            playerB.Stats.Strength,
+            playerB.Stats,
+            playerA.Stats,
             state.Ruleset);
 
         // Apply damage to starting HP of the turn (simultaneous)
@@ -262,36 +271,99 @@ public sealed class BattleEngine : IBattleEngine
 
     /// <summary>
     /// Calculates damage from attacker to defender.
-    /// Returns 0 if attacker is NoAction or attack is blocked.
+    /// Returns 0 if attacker is NoAction, attack is dodged, or attack is blocked (unless crit bypasses block).
+    /// 
+    /// ORDER MUST BE EXACTLY:
+    /// 1. if NoAction -> return 0
+    /// 2. check block via BattleZoneHelper
+    /// 3. compute derivedAtt / derivedDef via CombatMath
+    /// 4. roll dodge: if rng < ComputeDodgeChance -> return 0
+    /// 5. roll crit (BEFORE resolving block result): isCrit = rng < ComputeCritChance
+    /// 6. if blocked:
+    ///    - if isCrit AND CritEffect.Mode == BypassBlock -> damage passes
+    ///    - if isCrit AND CritEffect.Mode == Hybrid -> damage reduced by HybridBlockMultiplier
+    ///    - else -> return 0
+    /// 7. roll base damage
+    /// 8. if isCrit -> apply CritEffect.Multiplier
+    /// 9. return rounded damage (AwayFromZero)
     /// </summary>
-    private static int CalculateDamage(
+    private int CalculateDamage(
         PlayerAction attackerAction,
         PlayerAction defenderAction,
-        int attackerStrength,
+        PlayerStats attackerStats,
+        PlayerStats defenderStats,
         Ruleset ruleset)
     {
-        // If attacker is NoAction, no damage
+        // 1. If attacker is NoAction, no damage
         if (attackerAction.IsNoAction || attackerAction.AttackZone == null)
         {
             return 0;
         }
 
-        // Check if attack is blocked
+        // 2. Check if attack is blocked
         var attackZone = attackerAction.AttackZone.Value;
         var isBlocked = BattleZoneHelper.IsZoneBlocked(
             attackZone,
             defenderAction.BlockZonePrimary,
             defenderAction.BlockZoneSecondary);
 
-        if (isBlocked)
+        // 3. Compute derived stats
+        var derivedAtt = CombatMath.ComputeDerived(attackerStats, ruleset.Balance);
+        var derivedDef = CombatMath.ComputeDerived(defenderStats, ruleset.Balance);
+
+        // 4. Roll dodge
+        var dodgeChance = CombatMath.ComputeDodgeChance(derivedAtt, derivedDef, ruleset.Balance);
+        var dodgeRoll = _rng.NextDecimal(0, 1);
+        if (dodgeRoll < dodgeChance)
         {
-            // Attack is blocked - no damage
             return 0;
         }
 
-        // Calculate damage from strength
-        var damagePerStrength = ruleset.DamagePerStrength > 0 ? ruleset.DamagePerStrength : 2;
-        return attackerStrength * damagePerStrength;
+        // 5. Roll crit (BEFORE resolving block result)
+        var critChance = CombatMath.ComputeCritChance(derivedAtt, derivedDef, ruleset.Balance);
+        var critRoll = _rng.NextDecimal(0, 1);
+        var isCrit = critRoll < critChance;
+
+        // 6. Handle block (with crit penetration)
+        if (isBlocked)
+        {
+            if (isCrit && ruleset.Balance.CritEffect.Mode == CritEffectMode.BypassBlock)
+            {
+                // Crit bypasses block - damage passes
+            }
+            else if (isCrit && ruleset.Balance.CritEffect.Mode == CritEffectMode.Hybrid)
+            {
+                // Hybrid mode: damage reduced by HybridBlockMultiplier
+                // Continue to damage calculation with multiplier applied later
+            }
+            else
+            {
+                // Blocked - no damage
+                return 0;
+            }
+        }
+
+        // 7. Roll base damage
+        var baseDamage = CombatMath.RollDamage(_rng, derivedAtt);
+
+        // 8. Apply crit multiplier if crit occurred
+        decimal finalDamage = baseDamage;
+        if (isCrit)
+        {
+            if (isBlocked && ruleset.Balance.CritEffect.Mode == CritEffectMode.Hybrid)
+            {
+                // Hybrid mode: apply both multiplier and block reduction
+                finalDamage = baseDamage * ruleset.Balance.CritEffect.Multiplier * ruleset.Balance.CritEffect.HybridBlockMultiplier;
+            }
+            else
+            {
+                // Normal crit: apply multiplier
+                finalDamage = baseDamage * ruleset.Balance.CritEffect.Multiplier;
+            }
+        }
+
+        // 9. Return rounded damage (AwayFromZero)
+        return (int)Math.Round(finalDamage, MidpointRounding.AwayFromZero);
     }
 }
 

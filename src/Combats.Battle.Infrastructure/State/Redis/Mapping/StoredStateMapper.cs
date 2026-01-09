@@ -32,8 +32,12 @@ public static class StoredStateMapper
             PlayerBHp = state.PlayerBHp,
             PlayerAStrength = state.PlayerAStrength,
             PlayerAStamina = state.PlayerAStamina,
+            PlayerAAgility = state.PlayerAAgility,
+            PlayerAIntuition = state.PlayerAIntuition,
             PlayerBStrength = state.PlayerBStrength,
-            PlayerBStamina = state.PlayerBStamina
+            PlayerBStamina = state.PlayerBStamina,
+            PlayerBAgility = state.PlayerBAgility,
+            PlayerBIntuition = state.PlayerBIntuition
         };
     }
 
@@ -58,8 +62,12 @@ public static class StoredStateMapper
             PlayerBHp = domainState.PlayerB.CurrentHp,
             PlayerAStrength = domainState.PlayerA.Stats.Strength,
             PlayerAStamina = domainState.PlayerA.Stats.Stamina,
+            PlayerAAgility = domainState.PlayerA.Stats.Agility,
+            PlayerAIntuition = domainState.PlayerA.Stats.Intuition,
             PlayerBStrength = domainState.PlayerB.Stats.Strength,
-            PlayerBStamina = domainState.PlayerB.Stats.Stamina
+            PlayerBStamina = domainState.PlayerB.Stats.Stamina,
+            PlayerBAgility = domainState.PlayerB.Stats.Agility,
+            PlayerBIntuition = domainState.PlayerB.Stats.Intuition
         };
         state.SetDeadlineUtc(deadlineUtc);
         return state;

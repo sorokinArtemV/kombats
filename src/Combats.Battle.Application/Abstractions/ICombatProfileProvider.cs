@@ -20,7 +20,9 @@ public interface ICombatProfileProvider
 public record CombatProfile(
     Guid PlayerId,
     int Strength,
-    int Stamina);
+    int Stamina,
+    int Agility = 0,
+    int Intuition = 0);
 
 
 

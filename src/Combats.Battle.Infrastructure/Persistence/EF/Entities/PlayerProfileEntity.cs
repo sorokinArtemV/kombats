@@ -9,6 +9,8 @@ public class PlayerProfileEntity
     public Guid PlayerId { get; set; }
     public int Strength { get; set; }
     public int Stamina { get; set; }
+    public int Agility { get; set; }
+    public int Intuition { get; set; }
     public DateTime UpdatedAt { get; set; }
     public int Version { get; set; } = 1;
 }
