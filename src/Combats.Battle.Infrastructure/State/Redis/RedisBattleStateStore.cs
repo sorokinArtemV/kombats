@@ -1,9 +1,11 @@
+using System;
 using System.Text.Json;
 using Combats.Battle.Application.Abstractions;
 using Combats.Battle.Application.ReadModels;
 using Combats.Battle.Domain.Model;
 using Combats.Battle.Infrastructure.State.Redis.Mapping;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Combats.Battle.Infrastructure.State.Redis;
@@ -11,30 +13,43 @@ namespace Combats.Battle.Infrastructure.State.Redis;
 /// <summary>
 /// Infrastructure implementation of IBattleStateStore using Redis.
 /// Maps between Infrastructure BattleState and Domain/Application models.
+/// 
+/// Production scheduling: TurnDeadlineWorker uses ClaimDueBattlesAsync in a tick loop with adaptive backoff.
+/// Do not use legacy methods (GetNextDeadlineUtcAsync, GetDueBattlesAsync) for production code.
 /// </summary>
 public class RedisBattleStateStore : IBattleStateStore
 {
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisBattleStateStore> _logger;
+    private readonly BattleRedisOptions _options;
+    
     private const string StateKeyPrefix = "battle:state:";
     private const string ActionKeyPrefix = "battle:action:";
     private const string ActiveBattlesSetKey = "battle:active";
     private const string DeadlinesZSetKey = "battle:deadlines";
 
-    // Phase enum values for Lua scripts (must match BattlePhase enum):
-    // ArenaOpen = 0, TurnOpen = 1, Resolving = 2, Ended = 3
+    // ClaimDueBattles script constants (passed as ARGV)
+    private const int SmallDelayMs = 200; // Delay for non-TurnOpen phases
 
     public RedisBattleStateStore(
         IConnectionMultiplexer redis,
-        ILogger<RedisBattleStateStore> logger)
+        ILogger<RedisBattleStateStore> logger,
+        IOptions<BattleRedisOptions> options)
     {
         _redis = redis;
         _logger = logger;
+        _options = options.Value;
     }
+
+    // Helper methods for unix milliseconds conversion (ZSET scores use unixMs to avoid double precision issues)
+    private static long ToUnixMs(DateTime utc) => new DateTimeOffset(utc).ToUnixTimeMilliseconds();
+    private static long TicksToUnixMs(long ticks) => ticks / 10000;
+    private static long UnixMsToTicks(long unixMs) => unixMs * 10000;
 
     private string GetStateKey(Guid battleId) => $"{StateKeyPrefix}{battleId}";
     private string GetActionKey(Guid battleId, int turnIndex, Guid playerId) => 
         $"{ActionKeyPrefix}{battleId}:turn:{turnIndex}:player:{playerId}";
+    private string GetLockKey(Guid battleId, int turnIndex) => $"lock:battle:{battleId}:turn:{turnIndex}";
 
     public async Task<bool> TryInitializeBattleAsync(
         Guid battleId, 
@@ -104,43 +119,13 @@ public class RedisBattleStateStore : IBattleStateStore
         var db = _redis.GetDatabase();
         var key = GetStateKey(battleId);
 
-        var deadlineTicks = deadlineUtc.ToUniversalTime().Ticks;
-        // Phase enum: ArenaOpen=0, TurnOpen=1, Resolving=2, Ended=3
-        // Atomic: update state + add to deadlines ZSET in single Lua script
-        const string script = @"
-            local stateJson = redis.call('GET', KEYS[1])
-            if not stateJson then
-                return 0
-            end
-            local state = cjson.decode(stateJson)
-            -- Cannot open if already ended (Ended=3)
-            if state.Phase == 3 then
-                return 0
-            end
-            -- Must open turn N only if LastResolvedTurnIndex == N-1
-            local expectedLastResolved = tonumber(ARGV[1]) - 1
-            if state.LastResolvedTurnIndex ~= expectedLastResolved then
-                return 0
-            end
-            -- Must be in ArenaOpen (0) or Resolving (2) phase
-            if state.Phase ~= 0 and state.Phase ~= 2 then
-                return 0
-            end
-            -- Set to TurnOpen (1)
-            state.Phase = 1
-            state.TurnIndex = tonumber(ARGV[1])
-            state.DeadlineUtcTicks = ARGV[2]
-            state.Version = state.Version + 1
-            redis.call('SET', KEYS[1], cjson.encode(state))
-            -- Add to deadlines ZSET atomically
-            redis.call('ZADD', KEYS[2], ARGV[2], ARGV[3])
-            return 1
-        ";
+        // Convert deadline to unix milliseconds for ZSET score (avoids double precision issues)
+        var deadlineUnixMs = ToUnixMs(deadlineUtc);
 
         var result = await db.ScriptEvaluateAsync(
-            script,
+            RedisScripts.TryOpenTurnScript,
             new RedisKey[] { key, DeadlinesZSetKey },
-            new RedisValue[] { turnIndex, deadlineTicks, battleId.ToString() });
+            new RedisValue[] { turnIndex, deadlineUnixMs, battleId.ToString() });
 
         var success = (int)result == 1;
         if (success)
@@ -158,26 +143,8 @@ public class RedisBattleStateStore : IBattleStateStore
         var db = _redis.GetDatabase();
         var key = GetStateKey(battleId);
 
-        // Phase enum: ArenaOpen=0, TurnOpen=1, Resolving=2, Ended=3
-        const string script = @"
-            local stateJson = redis.call('GET', KEYS[1])
-            if not stateJson then
-                return 0
-            end
-            local state = cjson.decode(stateJson)
-            -- Must be in TurnOpen (1) phase and turnIndex must match, and not ended
-            if state.Phase ~= 1 or state.TurnIndex ~= tonumber(ARGV[1]) then
-                return 0
-            end
-            -- Set to Resolving (2)
-            state.Phase = 2
-            state.Version = state.Version + 1
-            redis.call('SET', KEYS[1], cjson.encode(state))
-            return 1
-        ";
-
         var result = await db.ScriptEvaluateAsync(
-            script,
+            RedisScripts.TryMarkTurnResolvingScript,
             [key],
             [turnIndex]);
 
@@ -205,45 +172,16 @@ public class RedisBattleStateStore : IBattleStateStore
         var db = _redis.GetDatabase();
         var key = GetStateKey(battleId);
 
-        var deadlineTicks = nextDeadlineUtc.ToUniversalTime().Ticks;
-        // Phase enum: ArenaOpen=0, TurnOpen=1, Resolving=2, Ended=3
-        // Atomic: update state + HP + deadlines ZSET in single Lua script
-        const string script = @"
-            local stateJson = redis.call('GET', KEYS[1])
-            if not stateJson then
-                return 0
-            end
-            local state = cjson.decode(stateJson)
-            -- Must be in Resolving (2) phase and current turnIndex must match
-            if state.Phase ~= 2 or state.TurnIndex ~= tonumber(ARGV[1]) then
-                return 0
-            end
-            -- Set LastResolvedTurnIndex to resolved turnIndex
-            state.LastResolvedTurnIndex = tonumber(ARGV[1])
-            -- Set to TurnOpen (1) for next turn
-            state.Phase = 1
-            state.TurnIndex = tonumber(ARGV[2])
-            state.DeadlineUtcTicks = ARGV[3]
-            state.NoActionStreakBoth = tonumber(ARGV[4])
-            -- Update HP atomically with turn resolution
-            state.PlayerAHp = tonumber(ARGV[5])
-            state.PlayerBHp = tonumber(ARGV[6])
-            -- Clear NextResolveScheduledUtcTicks (deprecated, kept for backward compatibility)
-            state.NextResolveScheduledUtcTicks = 0
-            state.Version = state.Version + 1
-            redis.call('SET', KEYS[1], cjson.encode(state))
-            -- Update deadlines ZSET atomically
-            redis.call('ZADD', KEYS[2], ARGV[3], ARGV[7])
-            return 1
-        ";
+        // Convert deadline to unix milliseconds for ZSET score (avoids double precision issues)
+        var deadlineUnixMs = ToUnixMs(nextDeadlineUtc);
 
         var result = await db.ScriptEvaluateAsync(
-            script,
+            RedisScripts.MarkTurnResolvedAndOpenNextScript,
             new RedisKey[] { key, DeadlinesZSetKey },
             new RedisValue[] { 
                 currentTurnIndex, 
                 nextTurnIndex, 
-                deadlineTicks, 
+                deadlineUnixMs, 
                 noActionStreak,
                 playerAHp,
                 playerBHp,
@@ -272,42 +210,8 @@ public class RedisBattleStateStore : IBattleStateStore
         var db = _redis.GetDatabase();
         var key = GetStateKey(battleId);
 
-        // Phase enum: ArenaOpen=0, TurnOpen=1, Resolving=2, Ended=3
-        // Atomic: set Phase=Ended + LastResolvedTurnIndex + NoActionStreakBoth + HP + remove from deadlines ZSET
-        // Returns: 2 = AlreadyEnded, 1 = EndedNow, 0 = NotCommitted
-        const string script = @"
-            local stateJson = redis.call('GET', KEYS[1])
-            if not stateJson then
-                return 0
-            end
-            local state = cjson.decode(stateJson)
-            -- If already ended (Ended=3), return AlreadyEnded (2)
-            if state.Phase == 3 then
-                return 2
-            end
-            -- Only end if currently resolving (Resolving=2) the specified turn
-            if state.Phase ~= 2 or state.TurnIndex ~= tonumber(ARGV[1]) then
-                return 0
-            end
-            -- Set to Ended (3)
-            state.Phase = 3
-            state.LastResolvedTurnIndex = tonumber(ARGV[1])
-            state.NoActionStreakBoth = tonumber(ARGV[2])
-            -- Update HP atomically with battle end
-            state.PlayerAHp = tonumber(ARGV[3])
-            state.PlayerBHp = tonumber(ARGV[4])
-            state.NextResolveScheduledUtcTicks = 0
-            state.Version = state.Version + 1
-            redis.call('SET', KEYS[1], cjson.encode(state))
-            -- Remove from active battles set
-            redis.call('SREM', KEYS[2], ARGV[5])
-            -- Remove from deadlines ZSET atomically
-            redis.call('ZREM', KEYS[3], ARGV[5])
-            return 1
-        ";
-
         var result = await db.ScriptEvaluateAsync(
-            script,
+            RedisScripts.EndBattleAndMarkResolvedScript,
             new RedisKey[] { key, ActiveBattlesSetKey, DeadlinesZSetKey },
             new RedisValue[] { turnIndex, noActionStreak, playerAHp, playerBHp, battleId.ToString() });
 
@@ -330,19 +234,22 @@ public class RedisBattleStateStore : IBattleStateStore
         return commitResult;
     }
 
-    // Deadline index methods (Redis ZSET)
+    // Deadline index methods (Redis ZSET) - Legacy/Diagnostics only
+    [Obsolete("Do not use in runtime flow; deadlines are managed by state transitions + claim. Use ClaimDueBattlesAsync for production deadline polling.")]
     public async Task AddBattleDeadlineAsync(Guid battleId, DateTime deadlineUtc, CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
-        var deadlineTicks = deadlineUtc.ToUniversalTime().Ticks;
+        // Convert to unix milliseconds for ZSET score
+        var deadlineUnixMs = ToUnixMs(deadlineUtc);
         
-        await db.SortedSetAddAsync(DeadlinesZSetKey, battleId.ToString(), deadlineTicks);
+        await db.SortedSetAddAsync(DeadlinesZSetKey, battleId.ToString(), deadlineUnixMs);
         
         _logger.LogInformation(
             "Added battle deadline for BattleId: {BattleId}, DeadlineUtc: {DeadlineUtc}",
             battleId, deadlineUtc);
     }
 
+    [Obsolete("Do not use in runtime flow; deadlines are managed by state transitions + claim. Use ClaimDueBattlesAsync for production deadline polling.")]
     public async Task RemoveBattleDeadlineAsync(Guid battleId, CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
@@ -354,15 +261,17 @@ public class RedisBattleStateStore : IBattleStateStore
             battleId);
     }
 
+    [Obsolete("Legacy method - not used by production worker. Use ClaimDueBattlesAsync for production deadline polling.")]
     public async Task<List<Guid>> GetDueBattlesAsync(DateTime nowUtc, int limit, CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
-        var nowTicks = nowUtc.ToUniversalTime().Ticks;
+        // Convert to unix milliseconds for ZSET score comparison
+        var nowUnixMs = ToUnixMs(nowUtc);
         
-        // ZRANGEBYSCORE battle:deadlines -inf nowTicks LIMIT 0 limit
+        // ZRANGEBYSCORE battle:deadlines -inf nowUnixMs LIMIT 0 limit
         var members = await db.SortedSetRangeByScoreAsync(
             DeadlinesZSetKey,
-            stop: nowTicks,
+            stop: nowUnixMs,
             take: limit);
         
         var battleIds = new List<Guid>();
@@ -377,6 +286,7 @@ public class RedisBattleStateStore : IBattleStateStore
         return battleIds;
     }
 
+    [Obsolete("Unsafe due to double precision; do not use. Use ClaimDueBattlesAsync tick loop in TurnDeadlineWorker.")]
     public async Task<DateTime?> GetNextDeadlineUtcAsync(CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
@@ -394,8 +304,75 @@ public class RedisBattleStateStore : IBattleStateStore
         }
         
         var score = result[0].Score;
-        // Score is stored as ticks (long)
-        return new DateTime((long)score, DateTimeKind.Utc);
+        // Score is stored as unix milliseconds (long), but Redis returns as double - potential precision loss
+        // Convert unixMs back to DateTime
+        var unixMs = (long)score;
+        return DateTimeOffset.FromUnixTimeMilliseconds(unixMs).UtcDateTime;
+    }
+
+    public async Task<IReadOnlyList<ClaimedBattleDue>> ClaimDueBattlesAsync(
+        DateTime nowUtc, 
+        int limit, 
+        TimeSpan leaseTtl, 
+        CancellationToken cancellationToken = default)
+    {
+        var db = _redis.GetDatabase();
+        // Convert to unix milliseconds for ZSET score (avoids double precision issues)
+        var nowUnixMs = ToUnixMs(nowUtc);
+        var leaseWindowMs = (int)leaseTtl.TotalMilliseconds;
+
+        try
+        {
+            var result = await db.ScriptEvaluateAsync(
+                RedisScripts.ClaimDueBattlesScript,
+                new RedisKey[] { DeadlinesZSetKey },
+                new RedisValue[] { nowUnixMs, limit, leaseWindowMs, SmallDelayMs, StateKeyPrefix });
+
+            var claimed = new List<ClaimedBattleDue>();
+            
+            if (!result.IsNull)
+            {
+                var results = (RedisValue[]?)result;
+                if (results != null)
+                {
+                    // Results come as pairs: [battleId1, turnIndex1, battleId2, turnIndex2, ...]
+                    for (int i = 0; i < results.Length; i += 2)
+                {
+                    if (i + 1 < results.Length)
+                    {
+                        var battleIdStr = results[i].ToString();
+                        var turnIndexStr = results[i + 1].ToString();
+                        
+                        if (Guid.TryParse(battleIdStr, out var battleId) && 
+                            int.TryParse(turnIndexStr, out var turnIndex))
+                        {
+                            claimed.Add(new ClaimedBattleDue
+                            {
+                                BattleId = battleId,
+                                TurnIndex = turnIndex
+                            });
+                        }
+                    }
+                }
+                }
+            }
+
+            if (claimed.Count > 0)
+            {
+                _logger.LogDebug(
+                    "Claimed {Count} battles for deadline resolution",
+                    claimed.Count);
+            }
+
+            return claimed;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error claiming due battles from Redis. NowUtc: {NowUtc}, Limit: {Limit}, LeaseTtl: {LeaseTtl}",
+                nowUtc, limit, leaseTtl);
+            throw;
+        }
     }
 
     public async Task<List<Guid>> GetActiveBattlesAsync(CancellationToken cancellationToken = default)
@@ -420,20 +397,20 @@ public class RedisBattleStateStore : IBattleStateStore
         var db = _redis.GetDatabase();
         var key = GetActionKey(battleId, turnIndex, playerId);
 
-        // Store action with expiration (cleanup after battle ends)
+        // Store action with configurable expiration (cleanup after battle ends)
         // Use SET NX (When.NotExists) to ensure first-write-wins
-        var wasSet = await db.StringSetAsync(key, actionPayload, TimeSpan.FromHours(1), When.NotExists);
+        var wasSet = await db.StringSetAsync(key, actionPayload, _options.ActionTtl, When.NotExists);
 
         if (wasSet)
         {
-            _logger.LogInformation(
+            _logger.LogDebug(
                 "Stored action for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}",
                 battleId, turnIndex, playerId);
             return ActionStoreResult.Accepted;
         }
         else
         {
-            _logger.LogInformation(
+            _logger.LogDebug(
                 "Action already submitted for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}",
                 battleId, turnIndex, playerId);
             return ActionStoreResult.AlreadySubmitted;

@@ -51,6 +51,10 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     return ConnectionMultiplexer.Connect(redisConnectionString);
 });
 
+// Configure Battle Redis options
+builder.Services.Configure<BattleRedisOptions>(
+    builder.Configuration.GetSection(BattleRedisOptions.SectionName));
+
 // Register Domain
 builder.Services.AddScoped<IBattleEngine, BattleEngine>();
 
