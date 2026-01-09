@@ -3,7 +3,7 @@ using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Combats.Battle.Api.Controllers;
+namespace Combats.Battle.Api.DevOnly;
 
 /// <summary>
 /// DEV-ONLY: Endpoint for creating battles without Matchmaking service.
@@ -94,12 +94,4 @@ public record CreateBattleResponse
     public Guid BattleId { get; init; }
     public Guid MatchId { get; init; }
 }
-
-
-
-
-
-
-
-
 

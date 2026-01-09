@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Combats.Battle.Api.Workers;
+namespace Combats.Battle.Infrastructure.Workers;
 
 /// <summary>
 /// Background worker that checks Redis ZSET (battle:deadlines) for battles with expired deadlines
@@ -207,5 +207,4 @@ public sealed class TurnDeadlineWorker : BackgroundService
     }
 
 }
-
 

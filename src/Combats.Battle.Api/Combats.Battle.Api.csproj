@@ -25,6 +25,12 @@
     <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="src/**" />
+    <Compile Remove="tools/**" />
+    <Compile Remove="Workers/**" />
+  </ItemGroup>
+
 </Project>
 
 

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle Test UI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        input, select {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px;
+        }
+        .log-entry.error {
+            color: #dc3545;
+        }
+        .log-entry.info {
+            color: #007bff;
+        }
+        .log-entry.success {
+            color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <h1>Battle Test UI</h1>
+    
+    <div class="container">
+        <h2>Connection</h2>
+        <div>
+            <input type="text" id="apiUrl" placeholder="API URL" value="https://localhost:7001" style="width: 200px;">
+            <input type="text" id="playerId" placeholder="Player ID" value="" style="width: 200px;">
+            <button id="connectBtn">Connect</button>
+            <button id="disconnectBtn" disabled>Disconnect</button>
+        </div>
+        <div id="connectionStatus" class="status disconnected">Disconnected</div>
+    </div>
+
+    <div class="container">
+        <h2>Battle Management</h2>
+        <div>
+            <input type="text" id="battleId" placeholder="Battle ID" style="width: 200px;">
+            <button id="createBattleBtn">Create Battle</button>
+            <button id="joinBattleBtn">Join Battle</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Battle State</h2>
+        <div id="battleState">Not connected</div>
+    </div>
+
+    <div class="container">
+        <h2>Actions</h2>
+        <div>
+            <select id="actionType">
+                <option value="attack">Attack</option>
+                <option value="defend">Defend</option>
+                <option value="wait">Wait</option>
+            </select>
+            <button id="submitActionBtn" disabled>Submit Action</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Log</h2>
+        <div id="log" class="log"></div>
+        <button id="clearLogBtn">Clear Log</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
+    <script>
+        let connection = null;
+        let currentBattleId = null;
+
+        const apiUrlInput = document.getElementById('apiUrl');
+        const playerIdInput = document.getElementById('playerId');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const battleIdInput = document.getElementById('battleId');
+        const createBattleBtn = document.getElementById('createBattleBtn');
+        const joinBattleBtn = document.getElementById('joinBattleBtn');
+        const actionTypeSelect = document.getElementById('actionType');
+        const submitActionBtn = document.getElementById('submitActionBtn');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const battleStateDiv = document.getElementById('battleState');
+        const logDiv = document.getElementById('log');
+        const clearLogBtn = document.getElementById('clearLogBtn');
+
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateConnectionStatus(connected) {
+            if (connected) {
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.className = 'status connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.className = 'status disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                submitActionBtn.disabled = true;
+            }
+        }
+
+        connectBtn.addEventListener('click', async () => {
+            const apiUrl = apiUrlInput.value;
+            const playerId = playerIdInput.value;
+
+            if (!playerId) {
+                alert('Please enter a Player ID');
+                return;
+            }
+
+            try {
+                const hubUrl = `${apiUrl}/battlehub?playerId=${playerId}`;
+                connection = new signalR.HubConnectionBuilder()
+                    .withUrl(hubUrl)
+                    .build();
+
+                connection.on('BattleStateUpdated', (data) => {
+                    log('Battle state updated: ' + JSON.stringify(data), 'info');
+                    updateBattleState(data);
+                });
+
+                connection.on('TurnOpened', (data) => {
+                    log('Turn opened: ' + JSON.stringify(data), 'success');
+                });
+
+                connection.on('TurnResolved', (data) => {
+                    log('Turn resolved: ' + JSON.stringify(data), 'success');
+                });
+
+                connection.on('PlayerDamaged', (data) => {
+                    log('Player damaged: ' + JSON.stringify(data), 'info');
+                });
+
+                connection.on('BattleEnded', (data) => {
+                    log('Battle ended: ' + JSON.stringify(data), 'success');
+                });
+
+                await connection.start();
+                log('Connected to SignalR hub', 'success');
+                updateConnectionStatus(true);
+            } catch (error) {
+                log('Connection error: ' + error.message, 'error');
+                updateConnectionStatus(false);
+            }
+        });
+
+        disconnectBtn.addEventListener('click', async () => {
+            if (connection) {
+                await connection.stop();
+                log('Disconnected from SignalR hub', 'info');
+                updateConnectionStatus(false);
+                connection = null;
+                currentBattleId = null;
+            }
+        });
+
+        createBattleBtn.addEventListener('click', async () => {
+            const apiUrl = apiUrlInput.value;
+            const playerAId = playerIdInput.value;
+            const playerBId = prompt('Enter Player B ID:');
+
+            if (!playerBId) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${apiUrl}/dev/battles`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        playerAId: playerAId,
+                        playerBId: playerBId,
+                        turnSeconds: 10,
+                        noActionLimit: 3
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    battleIdInput.value = data.battleId;
+                    currentBattleId = data.battleId;
+                    log(`Battle created: ${data.battleId}`, 'success');
+                } else {
+                    log('Failed to create battle: ' + await response.text(), 'error');
+                }
+            } catch (error) {
+                log('Error creating battle: ' + error.message, 'error');
+            }
+        });
+
+        joinBattleBtn.addEventListener('click', async () => {
+            const battleId = battleIdInput.value;
+            if (!battleId || !connection) {
+                alert('Please enter a Battle ID and connect first');
+                return;
+            }
+
+            try {
+                const snapshot = await connection.invoke('JoinBattle', battleId);
+                currentBattleId = battleId;
+                log('Joined battle: ' + JSON.stringify(snapshot), 'success');
+                updateBattleState(snapshot);
+                submitActionBtn.disabled = false;
+            } catch (error) {
+                log('Error joining battle: ' + error.message, 'error');
+            }
+        });
+
+        submitActionBtn.addEventListener('click', async () => {
+            if (!connection || !currentBattleId) {
+                alert('Please join a battle first');
+                return;
+            }
+
+            const actionType = actionTypeSelect.value;
+            const actionPayload = JSON.stringify({ type: actionType });
+
+            try {
+                // Get current turn index from battle state
+                const turnIndex = parseInt(battleStateDiv.dataset.turnIndex || '0');
+                await connection.invoke('SubmitTurnAction', currentBattleId, turnIndex, actionPayload);
+                log(`Action submitted: ${actionType}`, 'success');
+            } catch (error) {
+                log('Error submitting action: ' + error.message, 'error');
+            }
+        });
+
+        clearLogBtn.addEventListener('click', () => {
+            logDiv.innerHTML = '';
+        });
+
+        function updateBattleState(snapshot) {
+            if (!snapshot) {
+                battleStateDiv.textContent = 'No battle state';
+                return;
+            }
+
+            battleStateDiv.dataset.turnIndex = snapshot.turnIndex || 0;
+            battleStateDiv.innerHTML = `
+                <strong>Battle ID:</strong> ${snapshot.battleId}<br>
+                <strong>Phase:</strong> ${snapshot.phase}<br>
+                <strong>Turn Index:</strong> ${snapshot.turnIndex}<br>
+                <strong>Player A HP:</strong> ${snapshot.playerAHp}<br>
+                <strong>Player B HP:</strong> ${snapshot.playerBHp}<br>
+                <strong>No Action Streak:</strong> ${snapshot.noActionStreakBoth}<br>
+                ${snapshot.endedReason ? `<strong>Ended Reason:</strong> ${snapshot.endedReason}<br>` : ''}
+            `;
+        }
+    </script>
+</body>
+</html>
+

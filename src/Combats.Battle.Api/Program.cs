@@ -1,25 +1,9 @@
-using Combats.Battle.Application.UseCases.Lifecycle;
-using Combats.Battle.Application.UseCases.Turns;
-using Combats.Battle.Api.Middleware;
+using Combats.Battle.Api.DevOnly;
+using Combats.Battle.Infrastructure.DependencyInjection;
+using Combats.Battle.Infrastructure.Persistence.EF.DbContext;
 using Combats.Battle.Infrastructure.Realtime.SignalR;
 using Microsoft.AspNetCore.SignalR;
-using Combats.Battle.Api.Workers;
-using Combats.Battle.Application.Abstractions;
-using Combats.Battle.Domain;
-using Combats.Battle.Domain.Engine;
-using Combats.Battle.Infrastructure.Messaging.Consumers;
-using Combats.Battle.Infrastructure.Messaging;
-using MassTransitBattleEventPublisher = Combats.Battle.Infrastructure.Messaging.Publisher.MassTransitBattleEventPublisher;
-using Combats.Battle.Infrastructure.Persistence.EF;
-using Combats.Battle.Infrastructure.Persistence.EF.DbContext;
-using Combats.Battle.Infrastructure.Persistence.EF.Projections;
-using Combats.Battle.Infrastructure.Profiles;
-using Combats.Battle.Infrastructure.State.Redis;
-using Combats.Battle.Infrastructure.Time;
-using Combats.Infrastructure.Messaging.DependencyInjection;
-using Combats.Contracts.Battle;
 using Microsoft.EntityFrameworkCore;
-using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,72 +16,18 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod());
 });
 
-// Add services to the container
-builder.Services.AddControllers();
+// Register shared Battle services
+builder.Services.AddBattleApplication(builder.Configuration);
+builder.Services.AddBattleInfrastructure(builder.Configuration);
+builder.Services.AddBattleApi(builder.Configuration);
 
-// Configure PostgreSQL DbContext for Battle service
-builder.Services.AddDbContext<BattleDbContext>(options =>
+// DEV-ONLY: Register dev controllers only in Development
+#if DEBUG
+if (builder.Environment.IsDevelopment())
 {
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException("DefaultConnection connection string is required");
-    options.UseNpgsql(connectionString);
-});
-
-// Configure Redis
-var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
-                           ?? "localhost:6379";
-builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-{
-    return ConnectionMultiplexer.Connect(redisConnectionString);
-});
-
-// Configure Battle Redis options
-builder.Services.Configure<BattleRedisOptions>(
-    builder.Configuration.GetSection(BattleRedisOptions.SectionName));
-
-// Register Domain
-builder.Services.AddScoped<IBattleEngine, BattleEngine>();
-
-// Register Application ports (implemented by Infrastructure)
-builder.Services.AddScoped<IBattleStateStore, RedisBattleStateStore>();
-// SignalRBattleRealtimeNotifier uses IHubContext<BattleHub> directly
-builder.Services.AddScoped<IBattleRealtimeNotifier, SignalRBattleRealtimeNotifier>();
-builder.Services.AddScoped<IBattleEventPublisher, MassTransitBattleEventPublisher>();
-builder.Services.AddSingleton<IClock, SystemClock>();
-builder.Services.AddScoped<ICombatProfileProvider, DatabaseCombatProfileProvider>();
-
-// Register Application services
-builder.Services.AddSingleton<BattleRulesDefaults>();
-builder.Services.AddScoped<RulesetNormalizer>();
-builder.Services.AddScoped<PlayerActionNormalizer>();
-builder.Services.AddScoped<BattleLifecycleAppService>();
-builder.Services.AddScoped<BattleTurnAppService>();
-
-// Configure SignalR
-builder.Services.AddSignalR();
-
-// Configure messaging with typed DbContext for outbox/inbox support
-builder.Services.AddMessaging<BattleDbContext>(
-    builder.Configuration,
-    "battle",
-    x =>
-    {
-        x.AddConsumer<CreateBattleConsumer>();
-        x.AddConsumer<EndBattleConsumer>();
-        x.AddConsumer<BattleEndedProjectionConsumer>();
-    },
-    messagingBuilder =>
-    {
-        // Register entity name mappings (logical keys -> resolved from configuration)
-        messagingBuilder.Map<CreateBattle>("CreateBattle");
-        // BattleCreated is published but not consumed internally (state initialization done directly in CreateBattleConsumer)
-        messagingBuilder.Map<BattleCreated>("BattleCreated");
-        messagingBuilder.Map<EndBattle>("EndBattle");
-        messagingBuilder.Map<BattleEnded>("BattleEnded");
-    });
-
-// Register turn deadline worker (background service for deadline-driven turn resolution)
-builder.Services.AddHostedService<TurnDeadlineWorker>();
+    // Dev controllers are in DevOnly folder and will be discovered by AddControllers()
+}
+#endif
 
 var app = builder.Build();
 
@@ -114,7 +44,7 @@ if (app.Environment.IsDevelopment())
 // Configure the HTTP request pipeline
 app.UseHttpsRedirection();
 
-// Enable static files for dev UI
+// Enable static files (for production static content if needed)
 app.UseStaticFiles();
 
 app.UseAuthorization();

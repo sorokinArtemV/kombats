@@ -30,14 +30,25 @@ docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 \
 docker exec rabbitmq rabbitmq-plugins enable rabbitmq_delayed_message_exchange
 ```
 
-### 2. Запустить Battle сервис
+### 2. Запустить Battle сервисы
 
+Battle сервис состоит из двух отдельных процессов:
+
+**API (Web Host):**
 ```bash
-cd src/Combats.Services.Battle
+cd src/Combats.Battle.Api
 dotnet run
 ```
+API запустится на `https://localhost:5001` (или порт из `launchSettings.json`).
 
-Сервис запустится на `https://localhost:5001` (или порт из `launchSettings.json`).
+**Worker (Background Services):**
+```bash
+cd src/Combats.Battle.Worker
+dotnet run
+```
+Worker обрабатывает фоновые задачи (например, TurnDeadlineWorker для обработки истекших дедлайнов).
+
+**Важно:** Оба процесса должны быть запущены одновременно. Они используют общие Redis, Postgres и RabbitMQ.
 
 ### 3. Создать бой (DEV endpoint)
 
@@ -84,11 +95,11 @@ wscat -c "wss://localhost:5001/battlehub?playerId=11111111-1111-1111-1111-111111
 
 ## Архитектура flow
 
-1. **POST /dev/battles** → отправляет `CreateBattle` command через MassTransit
-2. **CreateBattleConsumer** → создает `BattleEntity` в Postgres, публикует `BattleCreated`
-3. **BattleCreatedEngineConsumer** → инициализирует `BattleState` в Redis, открывает Turn 1, планирует `ResolveTurn`
-4. **ResolveTurnConsumer** → разрешает turn, открывает следующий, планирует следующий `ResolveTurn`
-5. **BattleWatchdogService** → сканирует активные бои каждые 5 секунд, восстанавливает missing schedules
+1. **POST /dev/battles** (Api) → отправляет `CreateBattle` command через MassTransit
+2. **CreateBattleConsumer** (Api) → создает `BattleEntity` в Postgres, публикует `BattleCreated`
+3. **BattleCreatedEngineConsumer** (Api) → инициализирует `BattleState` в Redis, открывает Turn 1, добавляет deadline в ZSET
+4. **TurnDeadlineWorker** (Worker) → периодически проверяет Redis ZSET на истекшие дедлайны, разрешает turns
+5. **ResolveTurnConsumer** (Api) → обрабатывает явные запросы на разрешение turn (если есть)
 
 ## SignalR Endpoints
 
@@ -152,14 +163,19 @@ wscat -c "wss://localhost:5001/battlehub?playerId=11111111-1111-1111-1111-111111
 
 ## Troubleshooting
 
-- **"Battle not found"** → Проверьте, что `BattleCreatedEngineConsumer` обработал событие (логи)
-- **ResolveTurn не выполняется** → Проверьте RabbitMQ delayed-message-exchange plugin, логи watchdog
+- **"Battle not found"** → Проверьте, что `BattleCreatedEngineConsumer` обработал событие (логи Api)
+- **Turns не разрешаются автоматически** → Убедитесь, что Worker запущен и TurnDeadlineWorker активен (логи Worker)
 - **SignalR connection fails** → Убедитесь, что передаете `playerId` в query string или header
 - **DoubleForfeit не срабатывает** → Проверьте `NoActionLimit` в Ruleset (по умолчанию 3)
 
+## Dev Client
+
+Для ручного тестирования используйте HTML клиент:
+- `tools/battle-dev-client/battle.html` - интерактивный UI для тестирования боев
+
 ## См. также
 
-- `tools/manual_test_battle.md` - детальный manual test сценарий
+- `tools/battle-dev-client/` - dev-only клиенты для ручного тестирования
 - `docs/audit_report.md` - полный аудит архитектуры
 
 

@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 
-namespace Combats.Battle.Api.Middleware;
+namespace Combats.Battle.Api.DevOnly;
 
 /// <summary>
 /// DEV-ONLY: Middleware that substitutes JWT authentication for SignalR in Development environment.
@@ -71,12 +71,4 @@ public class DevSignalRAuthMiddleware
         await _next(context);
     }
 }
-
-
-
-
-
-
-
-
 
