@@ -10,3 +10,4 @@ public sealed class ClaimedBattleDue
     public int TurnIndex { get; init; }
 }
 
+

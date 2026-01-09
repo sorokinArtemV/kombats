@@ -13,3 +13,4 @@ public interface IRandomProvider
     decimal NextDecimal(decimal minInclusive, decimal maxInclusive);
 }
 
+

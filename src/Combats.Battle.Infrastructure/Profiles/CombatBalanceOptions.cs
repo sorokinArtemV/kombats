@@ -54,3 +54,4 @@ public class CritEffectBalanceOptions
     public decimal HybridBlockMultiplier { get; set; }
 }
 
+

@@ -20,3 +20,4 @@ public class BattleRedisOptions
     public TimeSpan? StateTtlAfterEnd { get; set; } = null;
 }
 
+

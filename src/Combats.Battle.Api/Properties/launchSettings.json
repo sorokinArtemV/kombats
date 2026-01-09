@@ -1,7 +1,7 @@
 {
   "$schema": "http://json.schemastore.org/launchsettings.json",
   "profiles": {
-    "Combats.Services.Battle": {
+    "Combats.Battle.Api": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,

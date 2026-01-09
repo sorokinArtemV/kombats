@@ -7,6 +7,7 @@ using Combats.Battle.Api.Workers;
 using Combats.Battle.Application.Abstractions;
 using Combats.Battle.Domain;
 using Combats.Battle.Domain.Engine;
+using Combats.Battle.Domain.Rules;
 using Combats.Battle.Infrastructure.Messaging.Consumers;
 using Combats.Battle.Infrastructure.Messaging;
 using MassTransitBattleEventPublisher = Combats.Battle.Infrastructure.Messaging.Publisher.MassTransitBattleEventPublisher;
@@ -14,6 +15,7 @@ using Combats.Battle.Infrastructure.Persistence.EF;
 using Combats.Battle.Infrastructure.Persistence.EF.DbContext;
 using Combats.Battle.Infrastructure.Persistence.EF.Projections;
 using Combats.Battle.Infrastructure.Profiles;
+using Combats.Battle.Infrastructure.Rules;
 using Combats.Battle.Infrastructure.State.Redis;
 using Combats.Battle.Infrastructure.Time;
 using Combats.Infrastructure.Messaging.DependencyInjection;
@@ -55,7 +57,12 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 builder.Services.Configure<BattleRedisOptions>(
     builder.Configuration.GetSection(BattleRedisOptions.SectionName));
 
+// Configure CombatBalance options
+builder.Services.Configure<CombatBalanceOptions>(
+    builder.Configuration.GetSection(CombatBalanceOptions.SectionName));
+
 // Register Domain
+builder.Services.AddSingleton<IRandomProvider, SystemRandomProvider>();
 builder.Services.AddScoped<IBattleEngine, BattleEngine>();
 
 // Register Application ports (implemented by Infrastructure)
@@ -65,6 +72,7 @@ builder.Services.AddScoped<IBattleRealtimeNotifier, SignalRBattleRealtimeNotifie
 builder.Services.AddScoped<IBattleEventPublisher, MassTransitBattleEventPublisher>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<ICombatProfileProvider, DatabaseCombatProfileProvider>();
+builder.Services.AddScoped<ICombatBalanceProvider, CombatBalanceProvider>();
 
 // Register Application services
 builder.Services.AddSingleton<BattleRulesDefaults>();
