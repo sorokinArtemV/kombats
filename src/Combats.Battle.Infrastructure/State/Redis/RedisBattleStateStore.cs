@@ -41,10 +41,8 @@ public class RedisBattleStateStore : IBattleStateStore
         _options = options.Value;
     }
 
-    // Helper methods for unix milliseconds conversion (ZSET scores use unixMs to avoid double precision issues)
-    private static long ToUnixMs(DateTime utc) => new DateTimeOffset(utc).ToUnixTimeMilliseconds();
-    private static long TicksToUnixMs(long ticks) => ticks / 10000;
-    private static long UnixMsToTicks(long unixMs) => unixMs * 10000;
+    // Helper method for unix milliseconds conversion (ZSET scores and state JSON use unixMs for consistency)
+    private static long ToUnixMs(DateTime utc) => new DateTimeOffset(utc, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
     private string GetStateKey(Guid battleId) => $"{StateKeyPrefix}{battleId}";
     private string GetActionKey(Guid battleId, int turnIndex, Guid playerId) => 

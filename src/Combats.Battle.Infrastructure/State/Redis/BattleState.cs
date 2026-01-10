@@ -18,8 +18,12 @@ public class BattleState
     public BattlePhase Phase { get; set; }
     public int TurnIndex { get; set; }
     
+    /// <summary>
+    /// Turn deadline in unix milliseconds (Int64).
+    /// Stored in Redis JSON and used as ZSET score for consistency.
+    /// </summary>
     [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
-    public long DeadlineUtcTicks { get; set; }
+    public long DeadlineUnixMs { get; set; }
     
     public int NoActionStreakBoth { get; set; }
     public int LastResolvedTurnIndex { get; set; }
@@ -41,11 +45,18 @@ public class BattleState
     public int? PlayerBIntuition { get; set; }
 
     // Helper methods for DateTime conversion
-    public DateTime GetDeadlineUtc() => new DateTime(DeadlineUtcTicks, DateTimeKind.Utc);
+    /// <summary>
+    /// Converts DeadlineUnixMs to DateTime (UTC).
+    /// </summary>
+    public DateTime GetDeadlineUtc() => DateTimeOffset.FromUnixTimeMilliseconds(DeadlineUnixMs).UtcDateTime;
     
+    /// <summary>
+    /// Sets DeadlineUnixMs from DateTime (UTC).
+    /// </summary>
     public void SetDeadlineUtc(DateTime deadlineUtc)
     {
-        DeadlineUtcTicks = deadlineUtc.ToUniversalTime().Ticks;
+        var deadlineOffset = new DateTimeOffset(deadlineUtc.ToUniversalTime(), TimeSpan.Zero);
+        DeadlineUnixMs = deadlineOffset.ToUnixTimeMilliseconds();
     }
 }
 

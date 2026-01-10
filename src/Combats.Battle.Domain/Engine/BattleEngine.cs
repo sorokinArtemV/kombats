@@ -344,7 +344,7 @@ public sealed class BattleEngine : IBattleEngine
         }
 
         // 7. Roll base damage
-        var baseDamage = CombatMath.RollDamage(_rng, derivedAtt);
+        decimal baseDamage = CombatMath.RollDamage(_rng, derivedAtt);
 
         // 8. Apply crit multiplier if crit occurred
         decimal finalDamage = baseDamage;

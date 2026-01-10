@@ -104,10 +104,9 @@ public static class CombatMath
     /// <summary>
     /// Rolls a random damage value within the attacker's damage range.
     /// </summary>
-    public static int RollDamage(IRandomProvider rng, DerivedCombatStats attacker)
+    public static decimal RollDamage(IRandomProvider rng, DerivedCombatStats attacker)
     {
-        var damage = rng.NextDecimal(attacker.DamageMin, attacker.DamageMax);
-        return (int)Math.Round(damage, MidpointRounding.AwayFromZero);
+        return rng.NextDecimal(attacker.DamageMin, attacker.DamageMax);
     }
 }
 

@@ -72,10 +72,10 @@ public sealed record DamageBalance
             throw new ArgumentException("DamagePerAgi cannot be negative", nameof(damagePerAgi));
         if (damagePerInt < 0)
             throw new ArgumentException("DamagePerInt cannot be negative", nameof(damagePerInt));
-        if (spreadMin < 0 || spreadMin > 1)
-            throw new ArgumentException("SpreadMin must be between 0 and 1", nameof(spreadMin));
-        if (spreadMax < 0 || spreadMax > 1)
-            throw new ArgumentException("SpreadMax must be between 0 and 1", nameof(spreadMax));
+        if (spreadMin < 0)
+            throw new ArgumentException("SpreadMin cannot be negative", nameof(spreadMin));
+        if (spreadMax < 0)
+            throw new ArgumentException("SpreadMax cannot be negative", nameof(spreadMax));
         if (spreadMin >= spreadMax)
             throw new ArgumentException("SpreadMin must be less than SpreadMax", nameof(spreadMin));
 

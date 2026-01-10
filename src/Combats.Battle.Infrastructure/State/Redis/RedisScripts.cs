@@ -43,7 +43,7 @@ internal static class RedisScripts
         -- Set to TurnOpen (1)
         state.Phase = 1
         state.TurnIndex = tonumber(ARGV[1])
-        state.DeadlineUtcTicks = tonumber(ARGV[2]) * 10000  -- Convert unixMs to ticks for state
+        state.DeadlineUnixMs = tonumber(ARGV[2])  -- Store unixMs directly (no conversion)
         state.Version = state.Version + 1
         redis.call('SET', KEYS[1], cjson.encode(state))
         -- Add to deadlines ZSET atomically (using unixMs as score)
@@ -102,7 +102,7 @@ internal static class RedisScripts
         -- Set to TurnOpen (1) for next turn
         state.Phase = 1
         state.TurnIndex = tonumber(ARGV[2])
-        state.DeadlineUtcTicks = tonumber(ARGV[3]) * 10000  -- Convert unixMs to ticks for state
+        state.DeadlineUnixMs = tonumber(ARGV[3])  -- Store unixMs directly (no conversion)
         state.NoActionStreakBoth = tonumber(ARGV[4])
         -- Update HP atomically with turn resolution
         state.PlayerAHp = tonumber(ARGV[5])
@@ -165,7 +165,7 @@ internal static class RedisScripts
     /// Rules:
     /// 1. If state.Phase == Ended (3): ZREM deadlines and skip.
     /// 2. If state.Phase != TurnOpen (1): postpone by smallDelayMs (no claim).
-    /// 3. If state.DeadlineUtcTicks exists and is in the future: set ZSET score to deadline in unixMs (no claim).
+    /// 3. If state.DeadlineUnixMs exists and is in the future: set ZSET score to DeadlineUnixMs (no claim).
     /// 4. If phase TurnOpen (1): attempt lock; if lock acquired: postpone to now + leaseWindowMs.
     /// 
     /// KEYS[1] = deadlines ZSET key (battle:deadlines)
@@ -184,9 +184,6 @@ internal static class RedisScripts
         local smallDelayMs = tonumber(ARGV[4])
         local stateKeyPrefix = ARGV[5]
         local deadlinesKey = KEYS[1]
-        
-        -- Convert nowUnixMs to ticks for state comparison (state stores deadline as ticks)
-        local nowTicks = nowUnixMs * 10000
         
         -- Get due battles from ZSET (up to limit)
         -- Note: ZSET scores are in unixMs, so we compare directly
@@ -217,11 +214,10 @@ internal static class RedisScripts
                     -- Rule 1: If state.Phase == Ended (3): ZREM and skip
                     if phase == 3 then
                         redis.call('ZREM', deadlinesKey, battleIdStr)
-                    -- Rule 3: If state.DeadlineUtcTicks exists and is in the future, use it as authoritative
-                    elseif state.DeadlineUtcTicks and state.DeadlineUtcTicks > nowTicks then
-                        -- Convert state deadline (ticks) to unixMs for ZSET score
-                        local deadlineUnixMs = math.floor(state.DeadlineUtcTicks / 10000)
-                        redis.call('ZADD', deadlinesKey, deadlineUnixMs, battleIdStr)
+                    -- Rule 3: If state.DeadlineUnixMs exists and is in the future, use it as authoritative
+                    elseif state.DeadlineUnixMs and state.DeadlineUnixMs > nowUnixMs then
+                        -- State deadline is already in unixMs - use it directly for ZSET score
+                        redis.call('ZADD', deadlinesKey, state.DeadlineUnixMs, battleIdStr)
                     -- Rule 2: If state.Phase != TurnOpen (1): postpone by smallDelayMs
                     elseif phase ~= 1 then
                         local postponeUnixMs = nowUnixMs + smallDelayMs
