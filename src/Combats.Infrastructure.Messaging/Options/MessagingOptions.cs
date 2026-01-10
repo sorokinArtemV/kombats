@@ -10,7 +10,6 @@ public class MessagingOptions
     public RetryOptions Retry { get; set; } = new();
     public RedeliveryOptions Redelivery { get; set; } = new();
     public OutboxOptions Outbox { get; set; } = new();
-    public InboxOptions Inbox { get; set; } = new();
     public SchedulerOptions Scheduler { get; set; } = new();
 }
 
@@ -57,13 +56,6 @@ public class OutboxOptions
     public bool Enabled { get; set; } = true;
     public int QueryDelaySeconds { get; set; } = 1;
     public int DeliveryLimit { get; set; } = 500;
-}
-
-public class InboxOptions
-{
-    public bool Enabled { get; set; } = true;
-    public int RetentionDays { get; set; } = 7;
-    public int CleanupIntervalMinutes { get; set; } = 15;
 }
 
 public class SchedulerOptions

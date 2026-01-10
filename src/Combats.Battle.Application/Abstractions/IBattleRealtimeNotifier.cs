@@ -1,0 +1,33 @@
+using Combats.Battle.Domain.Rules;
+
+namespace Combats.Battle.Application.Abstractions;
+
+/// <summary>
+/// Port interface for realtime notifications to battle participants.
+/// Application defines what it needs; Infrastructure provides SignalR implementation.
+/// </summary>
+public interface IBattleRealtimeNotifier
+{
+    public Task NotifyBattleReadyAsync(Guid battleId, Guid playerAId, Guid playerBId, CancellationToken cancellationToken = default);
+    public Task NotifyTurnOpenedAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default);
+    public Task NotifyTurnResolvedAsync(Guid battleId, int turnIndex, string playerAAction, string playerBAction, CancellationToken cancellationToken = default);
+    public Task NotifyPlayerDamagedAsync(Guid battleId, Guid playerId, int damage, int remainingHp, int turnIndex, CancellationToken cancellationToken = default);
+    public Task NotifyBattleStateUpdatedAsync(
+        Guid battleId,
+        Guid playerAId,
+        Guid playerBId,
+        Ruleset ruleset,
+        string phase,
+        int turnIndex,
+        DateTime deadlineUtc,
+        int noActionStreakBoth,
+        int lastResolvedTurnIndex,
+        string? endedReason,
+        int version,
+        int? playerAHp,
+        int? playerBHp,
+        CancellationToken cancellationToken = default);
+    Task NotifyBattleEndedAsync(Guid battleId, string reason, Guid? winnerPlayerId, DateTime endedAt, CancellationToken cancellationToken = default);
+}
+
+

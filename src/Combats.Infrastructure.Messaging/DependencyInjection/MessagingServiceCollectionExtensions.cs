@@ -2,10 +2,8 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Combats.Infrastructure.Messaging.Filters;
-using Combats.Infrastructure.Messaging.Inbox;
 using Combats.Infrastructure.Messaging.Naming;
 using Combats.Infrastructure.Messaging.Options;
 
@@ -52,22 +50,6 @@ public static class MessagingServiceCollectionExtensions
         var builder = new MessagingBuilder(configuration);
         configure?.Invoke(builder);
         var entityNameMap = builder.BuildEntityNameMap();
-
-        // Register inbox services if enabled
-        if (options.Inbox.Enabled)
-        {
-            // Register IInboxStore (EF Core implementation)
-            services.AddScoped<IInboxStore, InboxStore<TDbContext>>();
-
-            // Register IInboxProcessor
-            services.AddScoped<IInboxProcessor, InboxProcessor>();
-
-            // Register IConsumerIdProvider (default implementation)
-            services.AddSingleton<IConsumerIdProvider, ConsumerIdProvider>();
-
-            // Register inbox retention cleanup service
-            services.AddSingleton<IHostedService, InboxRetentionCleanupService<TDbContext>>();
-        }
 
         // Store entity name map in service collection for use by filters and formatters
         services.AddSingleton(entityNameMap);
@@ -117,7 +99,7 @@ public static class MessagingServiceCollectionExtensions
         messagingSection.Bind(options);
 
         // Validate that if Outbox/Inbox are enabled, DbContext type is provided
-        if (options.Outbox.Enabled || options.Inbox.Enabled)
+        if (options.Outbox.Enabled)
         {
             if (serviceDbContextType == null)
             {
@@ -170,55 +152,13 @@ public static class MessagingServiceCollectionExtensions
         var builder = new MessagingBuilder(configuration);
         configure?.Invoke(builder);
         var entityNameMap = builder.BuildEntityNameMap();
-
-        // Validate DbContext requirements
-        if (options.Outbox.Enabled && dbContextType == null)
-        {
-            throw new InvalidOperationException(
-                "Outbox is enabled but no service DbContext type is specified. " +
-                "Use AddMessaging<TDbContext>(...) overload or call builder.WithServiceDbContext<T>() in the configure action.");
-        }
-
-        if (options.Inbox.Enabled && dbContextType == null)
-        {
-            throw new InvalidOperationException(
-                "Inbox is enabled but no service DbContext type is specified. " +
-                "Use AddMessaging<TDbContext>(...) overload or call builder.WithServiceDbContext<T>() in the configure action.");
-        }
-
-        // Register inbox services if enabled (using reflection since we have Type at runtime)
-        if (options.Inbox.Enabled && dbContextType != null)
-        {
-            // Register IInboxStore (EF Core implementation)
-            var storeType = typeof(InboxStore<>).MakeGenericType(dbContextType);
-            services.AddScoped(typeof(IInboxStore), storeType);
-
-            // Register IInboxProcessor
-            services.AddScoped<IInboxProcessor, InboxProcessor>();
-
-            // Register IConsumerIdProvider (default implementation)
-            services.AddSingleton<IConsumerIdProvider, ConsumerIdProvider>();
-
-            // Register inbox retention cleanup service
-            var serviceType = typeof(InboxRetentionCleanupService<>).MakeGenericType(dbContextType);
-            services.Add(ServiceDescriptor.Singleton(typeof(IHostedService), serviceType));
-        }
-
+        
         // Store entity name map in service collection for use by filters and formatters
         services.AddSingleton(entityNameMap);
 
         // Register MassTransit
         services.AddMassTransit(x =>
         {
-            // Add EF Core outbox if enabled (requires compile-time generic, so we handle it in typed overload)
-            // For non-typed path, outbox registration is skipped (validation above ensures error is thrown)
-
-            // Add delayed message scheduler if enabled
-            if (options.Scheduler.Enabled)
-            {
-                x.AddDelayedMessageScheduler();
-            }
-
             // Register consumers
             configureConsumers(x);
 
@@ -281,13 +221,6 @@ public static class MessagingServiceCollectionExtensions
 
                 // Apply consume filters
                 cfg.UseConsumeFilter(typeof(ConsumeLoggingFilter<>), context);
-
-                // Configure inbox filter if enabled
-                if (messagingOptions.Inbox.Enabled && dbContextType != null)
-                {
-                    // Register inbox filter - it will use IInboxProcessor which uses IInboxStore
-                    cfg.UseConsumeFilter(typeof(InboxConsumeFilter<>), context);
-                }
 
                 // Configure endpoints with endpoint name formatter
                 // NOTE: ConfigureEndpoints filter parameter (e => { ... }) receives RegistrationFilterConfigurator,
@@ -326,18 +259,18 @@ public static class MessagingServiceCollectionExtensions
             {
                 x.AddEntityFrameworkOutbox<TDbContext>(o =>
                 {
+                    o.UsePostgres();
                     o.QueryDelay = TimeSpan.FromSeconds(options.Outbox.QueryDelaySeconds);
                     // Note: DeliveryLimit is not available in IEntityFrameworkOutboxConfigurator
                     // It's handled by the outbox delivery service internally
                 });
+                
+                x.AddConfigureEndpointsCallback((registrationContext, name, endpointConfigurator) =>
+                {
+                    endpointConfigurator.UseEntityFrameworkOutbox<TDbContext>(registrationContext);
+                });
             }
-
-            // Add delayed message scheduler if enabled
-            if (options.Scheduler.Enabled)
-            {
-                x.AddDelayedMessageScheduler();
-            }
-
+            
             // Register consumers
             configureConsumers(x);
 
@@ -400,13 +333,6 @@ public static class MessagingServiceCollectionExtensions
 
                 // Apply consume filters
                 cfg.UseConsumeFilter(typeof(ConsumeLoggingFilter<>), context);
-
-                // Configure inbox filter if enabled
-                if (messagingOptions.Inbox.Enabled)
-                {
-                    // Register inbox filter - it will use IInboxProcessor which uses IInboxStore
-                    cfg.UseConsumeFilter(typeof(InboxConsumeFilter<>), context);
-                }
 
                 // Configure endpoints with endpoint name formatter
                 // NOTE: ConfigureEndpoints filter parameter (e => { ... }) receives RegistrationFilterConfigurator,
