@@ -43,20 +43,14 @@ builder.Services.AddDbContext<BattleDbContext>(options =>
 });
 
 // Configure Redis
-var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
-                           ?? "localhost:6379";
-builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-{
-    return ConnectionMultiplexer.Connect(redisConnectionString);
-});
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
 
 // Configure Battle Redis options
-builder.Services.Configure<BattleRedisOptions>(
-    builder.Configuration.GetSection(BattleRedisOptions.SectionName));
+builder.Services.Configure<BattleRedisOptions>(builder.Configuration.GetSection(BattleRedisOptions.SectionName));
 
 // Configure CombatBalance options
-builder.Services.Configure<CombatBalanceOptions>(
-    builder.Configuration.GetSection(CombatBalanceOptions.SectionName));
+builder.Services.Configure<CombatBalanceOptions>(builder.Configuration.GetSection(CombatBalanceOptions.SectionName));
 
 // Register Domain
 builder.Services.AddSingleton<IRandomProvider, SystemRandomProvider>();

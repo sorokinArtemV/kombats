@@ -10,10 +10,10 @@ namespace Kombats.Battle.Infrastructure.Profiles;
 public class DefaultCombatProfileProvider : ICombatProfileProvider
 {
     private readonly ILogger<DefaultCombatProfileProvider> _logger;
-    private const int DefaultStrength = 10;
-    private const int DefaultStamina = 10;
-    private const int DefaultAgility = 0;
-    private const int DefaultIntuition = 0;
+    private const int DefaultStrength = 3;
+    private const int DefaultStamina = 3;
+    private const int DefaultAgility = 3;
+    private const int DefaultIntuition = 3;
 
     public DefaultCombatProfileProvider(ILogger<DefaultCombatProfileProvider> logger)
     {

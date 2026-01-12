@@ -12,13 +12,13 @@ public sealed class BattleDomainState
     public Guid MatchId { get; init; }
     public Guid PlayerAId { get; init; }
     public Guid PlayerBId { get; init; }
-    public Ruleset Ruleset { get; init; } = null!;
+    public Ruleset Ruleset { get; init; } 
     public BattlePhase Phase { get; private set; }
     public int TurnIndex { get; private set; }
     public int NoActionStreakBoth { get; private set; }
     public int LastResolvedTurnIndex { get; private set; }
-    public PlayerState PlayerA { get; private set; } = null!;
-    public PlayerState PlayerB { get; private set; } = null!;
+    public PlayerState PlayerA { get; private set; } 
+    public PlayerState PlayerB { get; private set; } 
 
     public BattleDomainState(
         Guid battleId,

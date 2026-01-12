@@ -6,12 +6,12 @@ namespace Kombats.Battle.Domain.Rules;
 /// </summary>
 public sealed record CombatBalance
 {
-    public HpBalance Hp { get; init; } = null!;
-    public DamageBalance Damage { get; init; } = null!;
-    public MfBalance Mf { get; init; } = null!;
-    public ChanceBalance DodgeChance { get; init; } = null!;
-    public ChanceBalance CritChance { get; init; } = null!;
-    public CritEffectBalance CritEffect { get; init; } = null!;
+    public HpBalance Hp { get; init; }
+    public DamageBalance Damage { get; init; }
+    public MfBalance Mf { get; init; }
+    public ChanceBalance DodgeChance { get; init; }
+    public ChanceBalance CritChance { get; init; }
+    public CritEffectBalance CritEffect { get; init; }
 
     public CombatBalance(
         HpBalance hp,

@@ -21,14 +21,14 @@ public static class BattleZoneHelper
     /// <summary>
     /// Valid block patterns (adjacent pairs in ring topology).
     /// </summary>
-    private static readonly HashSet<(BattleZone, BattleZone)> ValidBlockPatterns = new()
-    {
+    private static readonly HashSet<(BattleZone, BattleZone)> ValidBlockPatterns =
+    [
         (BattleZone.Head, BattleZone.Chest),
         (BattleZone.Chest, BattleZone.Belly),
         (BattleZone.Belly, BattleZone.Waist),
         (BattleZone.Waist, BattleZone.Legs),
         (BattleZone.Legs, BattleZone.Head)
-    };
+    ];
 
     /// <summary>
     /// Checks if two zones form a valid block pattern (adjacent in ring).
