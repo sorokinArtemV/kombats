@@ -45,6 +45,36 @@ public class BattleTurnAppServiceTests
             _loggerMock.Object);
     }
 
+    private static CombatBalance CreateTestBalance()
+    {
+        return new CombatBalance(
+            hp: new HpBalance(baseHp: 100, hpPerEnd: 6),
+            damage: new DamageBalance(
+                baseWeaponDamage: 10,
+                damagePerStr: 1.0m,
+                damagePerAgi: 0.5m,
+                damagePerInt: 0.3m,
+                spreadMin: 0.85m,
+                spreadMax: 1.15m),
+            mf: new MfBalance(mfPerAgi: 5, mfPerInt: 5),
+            dodgeChance: new ChanceBalance(
+                @base: 0.05m,
+                min: 0.02m,
+                max: 0.35m,
+                scale: 1.0m,
+                kBase: 50m),
+            critChance: new ChanceBalance(
+                @base: 0.03m,
+                min: 0.01m,
+                max: 0.30m,
+                scale: 1.0m,
+                kBase: 60m),
+            critEffect: new CritEffectBalance(
+                mode: CritEffectMode.BypassBlock,
+                multiplier: 1.5m,
+                hybridBlockMultiplier: 0.5m));
+    }
+
     [Fact]
     public async Task ResolveTurnAsync_WhenEndBattleReturnsEndedNow_ShouldNotifyAndPublish()
     {
@@ -57,7 +87,7 @@ public class BattleTurnAppServiceTests
         var occurredAt = DateTime.UtcNow;
         var winnerId = playerAId;
 
-		var ruleset = new Ruleset(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 42);
+		var ruleset = Ruleset.Create(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 42, hpPerStamina: 10, damagePerStrength: 2, balance: CreateTestBalance());
 		var playerAStats = new PlayerStats(5, 5);
 		var playerBStats = new PlayerStats(5, 5);
 		var playerAState = new PlayerState(playerAId, 100, playerAStats);
@@ -180,7 +210,7 @@ public class BattleTurnAppServiceTests
         var occurredAt = DateTime.UtcNow;
         var winnerId = playerAId;
 
-		var ruleset = new Ruleset(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 42);
+		var ruleset = Ruleset.Create(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 42, hpPerStamina: 10, damagePerStrength: 2, balance: CreateTestBalance());
 		
 		var state = new BattleSnapshot
         {
@@ -302,7 +332,7 @@ public class BattleTurnAppServiceTests
         var deadline = now.AddSeconds(30);
         _clockMock.Setup(x => x.UtcNow).Returns(now);
 
-		var ruleset = new Ruleset(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 0);
+		var ruleset = Ruleset.Create(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 0, hpPerStamina: 10, damagePerStrength: 2, balance: CreateTestBalance());
 		var state = new BattleSnapshot
         {
             BattleId = battleId,
@@ -353,7 +383,7 @@ public class BattleTurnAppServiceTests
         var deadline = now.AddSeconds(30);
         _clockMock.Setup(x => x.UtcNow).Returns(now);
 
-		var ruleset = new Ruleset(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 0);
+		var ruleset = Ruleset.Create(version: 1, turnSeconds: 30, noActionLimit: 3, seed: 0, hpPerStamina: 10, damagePerStrength: 2, balance: CreateTestBalance());
 		var state = new BattleSnapshot
         {
             BattleId = battleId,

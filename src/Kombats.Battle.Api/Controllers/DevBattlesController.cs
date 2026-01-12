@@ -51,14 +51,12 @@ public class DevBattlesController : ControllerBase
             MatchId = matchId,
             PlayerAId = request.PlayerAId,
             PlayerBId = request.PlayerBId,
-            Ruleset = new Ruleset
+            RulesetDto = new RulesetDto
             {
                 Version = 1,
                 TurnSeconds = request.TurnSeconds ?? 10,
                 NoActionLimit = request.NoActionLimit ?? 3,
                 Seed = new Random().Next(),
-                HpPerStamina = request.HpPerStamina ?? 10,
-                DamagePerStrength = request.DamagePerStrength ?? 2
             },
             RequestedAt = DateTime.UtcNow
         };

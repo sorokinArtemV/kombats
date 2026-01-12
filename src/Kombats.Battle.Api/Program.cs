@@ -67,7 +67,6 @@ builder.Services.AddScoped<ICombatBalanceProvider, CombatBalanceProvider>();
 
 // Register Application services
 builder.Services.AddSingleton<BattleRulesDefaults>();
-builder.Services.AddScoped<RulesetNormalizer>();
 builder.Services.AddScoped<PlayerActionNormalizer>();
 builder.Services.AddScoped<BattleLifecycleAppService>();
 builder.Services.AddScoped<BattleTurnAppService>();

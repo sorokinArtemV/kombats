@@ -7,6 +7,39 @@ using Xunit;
 
 namespace Kombats.Battle.Infrastructure.Tests.State.Redis;
 
+public static class TestHelpers
+{
+    public static CombatBalance CreateTestBalance()
+    {
+        return new CombatBalance(
+            hp: new HpBalance(baseHp: 100, hpPerEnd: 6),
+            damage: new DamageBalance(
+                baseWeaponDamage: 10,
+                damagePerStr: 1.0m,
+                damagePerAgi: 0.5m,
+                damagePerInt: 0.3m,
+                spreadMin: 0.85m,
+                spreadMax: 1.15m),
+            mf: new MfBalance(mfPerAgi: 5, mfPerInt: 5),
+            dodgeChance: new ChanceBalance(
+                @base: 0.05m,
+                min: 0.02m,
+                max: 0.35m,
+                scale: 1.0m,
+                kBase: 50m),
+            critChance: new ChanceBalance(
+                @base: 0.03m,
+                min: 0.01m,
+                max: 0.30m,
+                scale: 1.0m,
+                kBase: 60m),
+            critEffect: new CritEffectBalance(
+                mode: CritEffectMode.BypassBlock,
+                multiplier: 1.5m,
+                hybridBlockMultiplier: 0.5m));
+    }
+}
+
 /// <summary>
 /// Unit tests for BattleState serialization/deserialization with DeadlineUnixMs.
 /// Verifies that large unixMs values serialize without scientific notation and deserialize correctly.
@@ -22,7 +55,7 @@ public class BattleStateSerializationTests
             BattleId = Guid.NewGuid(),
             PlayerAId = Guid.NewGuid(),
             PlayerBId = Guid.NewGuid(),
-            Ruleset = new Ruleset(1, 10, 3, 123),
+            Ruleset = Ruleset.Create(1, 10, 3, 123, 10, 2, TestHelpers.CreateTestBalance()),
             Phase = BattlePhase.TurnOpen,
             TurnIndex = 1,
             DeadlineUnixMs = 1768018678268, // Realistic unixMs value (no scientific notation)
@@ -91,7 +124,7 @@ public class BattleStateSerializationTests
             BattleId = Guid.NewGuid(),
             PlayerAId = Guid.NewGuid(),
             PlayerBId = Guid.NewGuid(),
-            Ruleset = new Ruleset(1, 10, 3, 123),
+            Ruleset = Ruleset.Create(1, 10, 3, 123, 10, 2, TestHelpers.CreateTestBalance()),
             Phase = BattlePhase.TurnOpen,
             TurnIndex = 5,
             DeadlineUnixMs = DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeMilliseconds(),

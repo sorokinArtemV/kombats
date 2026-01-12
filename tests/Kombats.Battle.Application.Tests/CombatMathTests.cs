@@ -289,11 +289,13 @@ public class CombatMathTests
         var attackerStats = new PlayerStats(10, 10, 10, 100); // High intuition for crit
         var defenderStats = new PlayerStats(10, 10, 10, 0); // Low anti-crit
 
-        var ruleset = new Ruleset(
+        var ruleset = Ruleset.Create(
             version: 1,
             turnSeconds: 30,
             noActionLimit: 3,
             seed: 0,
+            hpPerStamina: 10,
+            damagePerStrength: 2,
             balance: balance);
 
         var playerAId = Guid.NewGuid();
@@ -369,11 +371,13 @@ public class CombatMathTests
         var attackerStats = new PlayerStats(10, 10, 10, 100); // High intuition for crit
         var defenderStats = new PlayerStats(10, 10, 10, 0); // Low anti-crit
 
-        var ruleset = new Ruleset(
+        var ruleset = Ruleset.Create(
             version: 1,
             turnSeconds: 30,
             noActionLimit: 3,
             seed: 0,
+            hpPerStamina: 10,
+            damagePerStrength: 2,
             balance: balance);
 
         var playerAId = Guid.NewGuid();

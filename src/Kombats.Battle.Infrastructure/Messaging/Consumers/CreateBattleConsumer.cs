@@ -62,7 +62,7 @@ public class CreateBattleConsumer : IConsumer<CreateBattle>
                 MatchId = battle.MatchId,
                 PlayerAId = battle.PlayerAId,
                 PlayerBId = battle.PlayerBId,
-                Ruleset = command.Ruleset,
+                RulesetDto = command.RulesetDto,
                 State = battle.State,
                 BattleServer = null, // Removed hardcoded value
                 CreatedAt = battle.CreatedAt,
