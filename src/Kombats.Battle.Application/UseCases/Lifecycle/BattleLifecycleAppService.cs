@@ -1,6 +1,5 @@
 using Kombats.Battle.Domain.Model;
 using Kombats.Battle.Domain.Rules;
-using Kombats.Contracts.Battle;
 using Kombats.Battle.Application.Abstractions;
 using Microsoft.Extensions.Logging;
 
@@ -15,7 +14,8 @@ public class BattleLifecycleAppService
     private readonly IBattleStateStore _stateStore;
     private readonly IBattleRealtimeNotifier _notifier;
     private readonly ICombatProfileProvider _profileProvider;
-    private readonly ICombatBalanceProvider _balanceProvider;
+    private readonly IRulesetProvider _rulesetProvider;
+    private readonly ISeedGenerator _seedGenerator;
     private readonly IClock _clock;
     private readonly ILogger<BattleLifecycleAppService> _logger;
 
@@ -23,20 +23,22 @@ public class BattleLifecycleAppService
         IBattleStateStore stateStore,
         IBattleRealtimeNotifier notifier,
         ICombatProfileProvider profileProvider,
-        ICombatBalanceProvider balanceProvider,
+        IRulesetProvider rulesetProvider,
+        ISeedGenerator seedGenerator,
         IClock clock,
         ILogger<BattleLifecycleAppService> logger)
     {
         _stateStore = stateStore;
         _notifier = notifier;
         _profileProvider = profileProvider;
-        _balanceProvider = balanceProvider;
+        _rulesetProvider = rulesetProvider;
+        _seedGenerator = seedGenerator;
         _clock = clock;
         _logger = logger;
     }
 
     /// <summary>
-    /// Handles BattleCreated event: initializes battle state and opens turn 1.
+    /// Handles battle creation: initializes battle state and opens turn 1.
     /// Convergent and idempotent: re-processing the same event always converges to correct state.
     /// Never leaves battle in ArenaOpen without an active turn.
     /// 
@@ -49,40 +51,64 @@ public class BattleLifecycleAppService
     /// (because Phase==TurnOpen and/or LastResolvedTurnIndex mismatch), so we only notify when
     /// it returns true (actual transition occurred).
     /// </summary>
-    public async Task HandleBattleCreatedAsync(BattleCreated message, CancellationToken cancellationToken = default)
+    /// <returns>Ruleset version and seed used for this battle, or null if initialization failed (non-retryable error).</returns>
+    public async Task<BattleInitializationResult?> HandleBattleCreatedAsync(
+        Guid battleId,
+        Guid matchId,
+        Guid playerAId,
+        Guid playerBId,
+        CancellationToken cancellationToken = default)
     {
-        var battleId = message.BattleId;
-
         _logger.LogInformation(
-            "Handling BattleCreated for BattleId: {BattleId}",
+            "Handling battle creation for BattleId: {BattleId}",
             battleId);
 
-        // Validate ruleset - handle validation errors as non-retryable (log + return)
-        var domainRuleset = ValidateRulesetOrReject(message.RulesetDto, battleId);
-        if (domainRuleset == null)
-        {
-            // Validation failed - already logged, ACK message to avoid infinite retries
-            return;
-        }
-
-        // Get player profiles (stats)
-        var profileA = await _profileProvider.GetProfileAsync(message.PlayerAId, cancellationToken);
-        var profileB = await _profileProvider.GetProfileAsync(message.PlayerBId, cancellationToken);
+        // Get player profiles (stats) - treat missing profiles as non-retryable business error
+        var profileA = await _profileProvider.GetProfileAsync(playerAId, cancellationToken);
+        var profileB = await _profileProvider.GetProfileAsync(playerBId, cancellationToken);
         
         if (profileA == null || profileB == null)
         {
             _logger.LogError(
-                "Player profile not found for BattleId: {BattleId}, PlayerAId: {PlayerAId}, PlayerBId: {PlayerBId}. ACKing message to avoid infinite retries.",
-                battleId, message.PlayerAId, message.PlayerBId);
-            return;
+                "Player profile not found for BattleId: {BattleId}, PlayerAId: {PlayerAId}, PlayerBId: {PlayerBId}. " +
+                "ACKing message to avoid infinite retries.",
+                battleId, playerAId, playerBId);
+            return null;
         }
+
+        // Select ruleset from configuration (Battle service is authoritative)
+        RulesetWithoutSeed rulesetWithoutSeed;
+        try
+        {
+            rulesetWithoutSeed = _rulesetProvider.GetCurrentRuleset();
+        }
+        catch (Exception ex)
+        {
+            // Configuration error - non-retryable
+            _logger.LogError(
+                ex,
+                "Failed to get current ruleset for BattleId: {BattleId}. Configuration error. ACKing message to avoid infinite retries.",
+                battleId);
+            return null;
+        }
+
+        // Generate seed per battle (cryptographically safe)
+        var seed = _seedGenerator.GenerateSeed();
+
+        // Build final domain Ruleset for this battle
+        var domainRuleset = Ruleset.Create(
+            version: rulesetWithoutSeed.Version,
+            turnSeconds: rulesetWithoutSeed.TurnSeconds,
+            noActionLimit: rulesetWithoutSeed.NoActionLimit,
+            seed: seed,
+            balance: rulesetWithoutSeed.Balance);
 
         // Build initial state
         var initialState = BuildInitialState(
             battleId,
-            message.MatchId,
-            message.PlayerAId,
-            message.PlayerBId,
+            matchId,
+            playerAId,
+            playerBId,
             domainRuleset,
             profileA,
             profileB);
@@ -102,17 +128,13 @@ public class BattleLifecycleAppService
         // If it returns false, Turn 1 is already open or battle is in a different state (converged)
         if (turnOpened)
         {
-            // Read state to get authoritative deadline (may differ slightly from our calculation)
-            var state = await _stateStore.GetStateAsync(battleId, cancellationToken);
-            if (state != null)
-            {
-                await _notifier.NotifyBattleReadyAsync(battleId, message.PlayerAId, message.PlayerBId, cancellationToken);
-                await _notifier.NotifyTurnOpenedAsync(battleId, 1, state.DeadlineUtc, cancellationToken);
+            // Use the computed deadlineUtc we passed to TryOpenTurnAsync (Lua stores exactly the passed deadline)
+            await _notifier.NotifyBattleReadyAsync(battleId, playerAId, playerBId, cancellationToken);
+            await _notifier.NotifyTurnOpenedAsync(battleId, 1, turn1Deadline, cancellationToken);
 
-                _logger.LogInformation(
-                    "Battle {BattleId} initialized and Turn 1 opened. Deadline: {DeadlineUtc}",
-                    battleId, state.DeadlineUtc);
-            }
+            _logger.LogInformation(
+                "Battle {BattleId} initialized and Turn 1 opened. RulesetVersion: {RulesetVersion}, Seed: {Seed}, Deadline: {DeadlineUtc}",
+                battleId, domainRuleset.Version, seed, turn1Deadline);
         }
         else
         {
@@ -120,55 +142,12 @@ public class BattleLifecycleAppService
                 "Battle {BattleId} already has Turn 1 open or is in a different state (converged, no notification sent)",
                 battleId);
         }
-    }
 
-    /// <summary>
-    /// Validates and creates Domain Ruleset from Contracts Ruleset.
-    /// Returns null if validation fails (non-retryable error - log and ACK message).
-    /// Throws only on transient infrastructure errors (should be retried).
-    /// </summary>
-    private Ruleset? ValidateRulesetOrReject(RulesetDto? contractRuleset, Guid battleId)
-    {
-        if (contractRuleset == null)
+        return new BattleInitializationResult
         {
-            _logger.LogError(
-                "Ruleset is null in BattleCreated event for BattleId: {BattleId}. This is a validation error. ACKing message to avoid infinite retries.",
-                battleId);
-            return null;
-        }
-
-        try
-        {
-            // Get CombatBalance from provider (required)
-            var balance = _balanceProvider.GetBalance();
-
-            // Create domain ruleset with strict validation
-            // Ruleset.Create() will throw on invalid values (Version <= 0, TurnSeconds <= 0, etc.)
-            return Ruleset.Create(
-                version: contractRuleset.Version,
-                turnSeconds: contractRuleset.TurnSeconds,
-                noActionLimit: contractRuleset.NoActionLimit,
-                seed: contractRuleset.Seed,
-                balance: balance);
-        }
-        catch (ArgumentNullException ex)
-        {
-            // Validation error - non-retryable
-            _logger.LogError(
-                ex,
-                "Missing required ruleset data in BattleCreated event for BattleId: {BattleId}. Validation error: {Error}. ACKing message to avoid infinite retries.",
-                battleId, ex.Message);
-            return null;
-        }
-        catch (ArgumentException ex)
-        {
-            // Validation error - non-retryable
-            _logger.LogError(
-                ex,
-                "Invalid ruleset data in BattleCreated event for BattleId: {BattleId}. Validation error: {Error}. ACKing message to avoid infinite retries.",
-                battleId, ex.Message);
-            return null;
-        }
+            RulesetVersion = domainRuleset.Version,
+            Seed = seed
+        };
     }
 
     /// <summary>
@@ -216,6 +195,15 @@ public class BattleLifecycleAppService
     {
         return _clock.UtcNow.AddSeconds(ruleset.TurnSeconds);
     }
+}
+
+/// <summary>
+/// Result of battle initialization, containing ruleset version and seed used.
+/// </summary>
+public class BattleInitializationResult
+{
+    public int RulesetVersion { get; set; }
+    public int Seed { get; set; }
 }
 
 

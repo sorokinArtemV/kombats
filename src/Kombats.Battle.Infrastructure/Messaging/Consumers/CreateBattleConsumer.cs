@@ -55,16 +55,35 @@ public class CreateBattleConsumer : IConsumer<CreateBattle>
             // Save changes first - this will throw on unique violation if battle already exists
             await _dbContext.SaveChangesAsync(context.CancellationToken);
 
-            // Only publish event after successful insert
+            // Initialize battle state in Redis (selects ruleset from config, generates seed)
+            var initResult = await _lifecycleService.HandleBattleCreatedAsync(
+                battle.BattleId,
+                battle.MatchId,
+                battle.PlayerAId,
+                battle.PlayerBId,
+                context.CancellationToken);
+
+            if (initResult == null)
+            {
+                // Initialization failed (non-retryable error - already logged)
+                // Rollback DB transaction by not saving changes
+                _logger.LogWarning(
+                    "Battle initialization failed for BattleId: {BattleId}. Not publishing BattleCreated event.",
+                    command.BattleId);
+                return;
+            }
+
+            // Publish event after successful initialization (includes ruleset version and seed)
             var battleCreated = new BattleCreated
             {
                 BattleId = battle.BattleId,
                 MatchId = battle.MatchId,
                 PlayerAId = battle.PlayerAId,
                 PlayerBId = battle.PlayerBId,
-                RulesetDto = command.RulesetDto,
+                RulesetVersion = initResult.RulesetVersion,
+                Seed = initResult.Seed,
                 State = battle.State,
-                BattleServer = null, // Removed hardcoded value
+                BattleServer = null,
                 CreatedAt = battle.CreatedAt,
                 Version = 1
             };
@@ -74,10 +93,6 @@ public class CreateBattleConsumer : IConsumer<CreateBattle>
 
             // Save changes again for outbox
             await _dbContext.SaveChangesAsync(context.CancellationToken);
-
-            // Initialize battle state in Redis (previously handled by BattleCreatedConsumer)
-            // This is done directly here to avoid internal event consumption overhead
-            await _lifecycleService.HandleBattleCreatedAsync(battleCreated, context.CancellationToken);
 
             _logger.LogInformation(
                 "Successfully created battle {BattleId}, published BattleCreated event, and initialized Redis state",

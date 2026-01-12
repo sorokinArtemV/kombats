@@ -45,19 +45,13 @@ public class DevBattlesController : ControllerBase
         var battleId = Guid.NewGuid();
         var matchId = Guid.NewGuid(); // Dev: generate fake MatchId
 
+        // Battle service selects ruleset from configuration - no ruleset in command
         var command = new CreateBattle
         {
             BattleId = battleId,
             MatchId = matchId,
             PlayerAId = request.PlayerAId,
             PlayerBId = request.PlayerBId,
-            RulesetDto = new RulesetDto
-            {
-                Version = 1,
-                TurnSeconds = request.TurnSeconds ?? 10,
-                NoActionLimit = request.NoActionLimit ?? 3,
-                Seed = new Random().Next(),
-            },
             RequestedAt = DateTime.UtcNow
         };
 
@@ -81,10 +75,7 @@ public record CreateBattleRequest
 {
     public Guid PlayerAId { get; init; }
     public Guid PlayerBId { get; init; }
-    public int? TurnSeconds { get; init; }
-    public int? NoActionLimit { get; init; }
-    public int? HpPerStamina { get; init; }
-    public int? DamagePerStrength { get; init; }
+    // Ruleset parameters removed - Battle service selects from configuration
 }
 
 public record CreateBattleResponse
