@@ -101,11 +101,45 @@ public sealed class BattleEngine : IBattleEngine
 
             continuingState.UpdateNoActionStreak(newStreak);
 
+            // Create turn resolution log for DoubleForfeit (both NoAction)
+            var doubleForfeitLog = new TurnResolutionLog
+            {
+                BattleId = state.BattleId,
+                TurnIndex = state.TurnIndex,
+                AtoB = new AttackResolution
+                {
+                    AttackerId = state.PlayerAId,
+                    DefenderId = state.PlayerBId,
+                    TurnIndex = state.TurnIndex,
+                    AttackZone = null,
+                    DefenderBlockPrimary = null,
+                    DefenderBlockSecondary = null,
+                    WasBlocked = false,
+                    WasCrit = false,
+                    Outcome = AttackOutcome.NoAction,
+                    Damage = 0
+                },
+                BtoA = new AttackResolution
+                {
+                    AttackerId = state.PlayerBId,
+                    DefenderId = state.PlayerAId,
+                    TurnIndex = state.TurnIndex,
+                    AttackZone = null,
+                    DefenderBlockPrimary = null,
+                    DefenderBlockSecondary = null,
+                    WasBlocked = false,
+                    WasCrit = false,
+                    Outcome = AttackOutcome.NoAction,
+                    Damage = 0
+                }
+            };
+
             events.Add(new TurnResolvedDomainEvent(
                 state.BattleId,
                 state.TurnIndex,
                 normalizedActionA,
                 normalizedActionB,
+                doubleForfeitLog,
                 now));
 
             return new BattleResolutionResult
@@ -118,47 +152,62 @@ public sealed class BattleEngine : IBattleEngine
         // Reset streak if at least one player acted
         var resetStreak = 0;
 
-        // Calculate damage simultaneously (order must not matter)
-        // Damage from A to B
-        int damageToB = CalculateDamage(
+        // Resolve attacks simultaneously (order must not matter)
+        // Attack from A to B
+        var resolutionAtoB = ResolveAttack(
             normalizedActionA,
             normalizedActionB,
             playerA.Stats,
             playerB.Stats,
+            state.PlayerAId,
+            state.PlayerBId,
+            state.TurnIndex,
             state.Ruleset);
 
-        // Damage from B to A
-        int damageToA = CalculateDamage(
+        // Attack from B to A
+        var resolutionBtoA = ResolveAttack(
             normalizedActionB,
             normalizedActionA,
             playerB.Stats,
             playerA.Stats,
+            state.PlayerBId,
+            state.PlayerAId,
+            state.TurnIndex,
             state.Ruleset);
 
         // Apply damage to starting HP of the turn (simultaneous)
-        if (damageToB > 0 && playerB.IsAlive)
+        if (resolutionAtoB.Damage > 0 && playerB.IsAlive)
         {
-            playerB.ApplyDamage(damageToB);
+            playerB.ApplyDamage(resolutionAtoB.Damage);
             events.Add(new PlayerDamagedDomainEvent(
                 state.BattleId,
                 state.PlayerBId,
-                damageToB,
+                resolutionAtoB.Damage,
                 playerB.CurrentHp,
                 state.TurnIndex,
                 now));
         }
 
-        if (damageToA > 0 && playerA.IsAlive)
+        if (resolutionBtoA.Damage > 0 && playerA.IsAlive)
         {
-            playerA.ApplyDamage(damageToA);
+            playerA.ApplyDamage(resolutionBtoA.Damage);
             events.Add(new PlayerDamagedDomainEvent(
                 state.BattleId,
                 state.PlayerAId,
-                damageToA,
+                resolutionBtoA.Damage,
                 playerA.CurrentHp,
                 state.TurnIndex,
                 now));
         }
+
+        // Create turn resolution log
+        var turnLog = new TurnResolutionLog
+        {
+            BattleId = state.BattleId,
+            TurnIndex = state.TurnIndex,
+            AtoB = resolutionAtoB,
+            BtoA = resolutionBtoA
+        };
 
         // Check for battle end due to player death
         var winnerId = (Guid?)null;
@@ -231,6 +280,7 @@ public sealed class BattleEngine : IBattleEngine
                 state.TurnIndex,
                 normalizedActionA,
                 normalizedActionB,
+                turnLog,
                 now));
         }
 
@@ -270,34 +320,48 @@ public sealed class BattleEngine : IBattleEngine
     }
 
     /// <summary>
-    /// Calculates damage from attacker to defender.
-    /// Returns 0 if attacker is NoAction, attack is dodged, or attack is blocked (unless crit bypasses block).
+    /// Resolves an attack from attacker to defender, returning detailed resolution.
     /// 
     /// ORDER MUST BE EXACTLY:
-    /// 1. if NoAction -> return 0
+    /// 1. if NoAction -> Outcome = NoAction, damage 0
     /// 2. check block via BattleZoneHelper
     /// 3. compute derivedAtt / derivedDef via CombatMath
-    /// 4. roll dodge: if rng < ComputeDodgeChance -> return 0
+    /// 4. roll dodge: if rng < ComputeDodgeChance -> Outcome = Dodged, damage 0
     /// 5. roll crit (BEFORE resolving block result): isCrit = rng < ComputeCritChance
     /// 6. if blocked:
-    ///    - if isCrit AND CritEffect.Mode == BypassBlock -> damage passes
-    ///    - if isCrit AND CritEffect.Mode == Hybrid -> damage reduced by HybridBlockMultiplier
-    ///    - else -> return 0
+    ///    - if isCrit AND CritEffect.Mode == BypassBlock -> Outcome = CriticalBypassBlock (damage computed as crit)
+    ///    - if isCrit AND CritEffect.Mode == Hybrid -> Outcome = CriticalHybridBlocked (damage computed with both multipliers)
+    ///    - else -> Outcome = Blocked, damage 0
     /// 7. roll base damage
     /// 8. if isCrit -> apply CritEffect.Multiplier
     /// 9. return rounded damage (AwayFromZero)
     /// </summary>
-    private int CalculateDamage(
+    private AttackResolution ResolveAttack(
         PlayerAction attackerAction,
         PlayerAction defenderAction,
         PlayerStats attackerStats,
         PlayerStats defenderStats,
+        Guid attackerId,
+        Guid defenderId,
+        int turnIndex,
         Ruleset ruleset)
     {
-        // 1. If attacker is NoAction, no damage
+        // 1. If attacker is NoAction, return NoAction outcome
         if (attackerAction.IsNoAction || attackerAction.AttackZone == null)
         {
-            return 0;
+            return new AttackResolution
+            {
+                AttackerId = attackerId,
+                DefenderId = defenderId,
+                TurnIndex = turnIndex,
+                AttackZone = null,
+                DefenderBlockPrimary = defenderAction.BlockZonePrimary,
+                DefenderBlockSecondary = defenderAction.BlockZoneSecondary,
+                WasBlocked = false,
+                WasCrit = false,
+                Outcome = AttackOutcome.NoAction,
+                Damage = 0
+            };
         }
 
         // 2. Check if attack is blocked
@@ -316,7 +380,19 @@ public sealed class BattleEngine : IBattleEngine
         var dodgeRoll = _rng.NextDecimal(0, 1);
         if (dodgeRoll < dodgeChance)
         {
-            return 0;
+            return new AttackResolution
+            {
+                AttackerId = attackerId,
+                DefenderId = defenderId,
+                TurnIndex = turnIndex,
+                AttackZone = attackZone,
+                DefenderBlockPrimary = defenderAction.BlockZonePrimary,
+                DefenderBlockSecondary = defenderAction.BlockZoneSecondary,
+                WasBlocked = isBlocked,
+                WasCrit = false,
+                Outcome = AttackOutcome.Dodged,
+                Damage = 0
+            };
         }
 
         // 5. Roll crit (BEFORE resolving block result)
@@ -325,22 +401,41 @@ public sealed class BattleEngine : IBattleEngine
         var isCrit = critRoll < critChance;
 
         // 6. Handle block (with crit penetration)
+        AttackOutcome outcome;
         if (isBlocked)
         {
             if (isCrit && ruleset.Balance.CritEffect.Mode == CritEffectMode.BypassBlock)
             {
                 // Crit bypasses block - damage passes
+                outcome = AttackOutcome.CriticalBypassBlock;
             }
             else if (isCrit && ruleset.Balance.CritEffect.Mode == CritEffectMode.Hybrid)
             {
                 // Hybrid mode: damage reduced by HybridBlockMultiplier
-                // Continue to damage calculation with multiplier applied later
+                outcome = AttackOutcome.CriticalHybridBlocked;
             }
             else
             {
                 // Blocked - no damage
-                return 0;
+                return new AttackResolution
+                {
+                    AttackerId = attackerId,
+                    DefenderId = defenderId,
+                    TurnIndex = turnIndex,
+                    AttackZone = attackZone,
+                    DefenderBlockPrimary = defenderAction.BlockZonePrimary,
+                    DefenderBlockSecondary = defenderAction.BlockZoneSecondary,
+                    WasBlocked = true,
+                    WasCrit = false,
+                    Outcome = AttackOutcome.Blocked,
+                    Damage = 0
+                };
             }
+        }
+        else
+        {
+            // Not blocked - determine outcome based on crit
+            outcome = isCrit ? AttackOutcome.CriticalHit : AttackOutcome.Hit;
         }
 
         // 7. Roll base damage
@@ -363,7 +458,41 @@ public sealed class BattleEngine : IBattleEngine
         }
 
         // 9. Return rounded damage (AwayFromZero)
-        return (int)Math.Round(finalDamage, MidpointRounding.AwayFromZero);
+        var damage = (int)Math.Round(finalDamage, MidpointRounding.AwayFromZero);
+
+        // Enforce invariants
+        // Invariant 1: If Damage == 0, Outcome MUST be one of: NoAction, Dodged, Blocked
+        if (damage == 0 && outcome != AttackOutcome.NoAction && outcome != AttackOutcome.Dodged && outcome != AttackOutcome.Blocked)
+        {
+            throw new InvalidOperationException(
+                $"Invariant violation: Damage is 0 but Outcome is {outcome}. " +
+                $"Damage=0 requires Outcome to be NoAction, Dodged, or Blocked.");
+        }
+
+        // Invariant 2: If Outcome is Critical*, then Damage MUST be > 0
+        if ((outcome == AttackOutcome.CriticalHit || 
+             outcome == AttackOutcome.CriticalBypassBlock || 
+             outcome == AttackOutcome.CriticalHybridBlocked) && 
+            damage <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Invariant violation: Outcome is {outcome} but Damage is {damage}. " +
+                $"Critical outcomes require Damage > 0.");
+        }
+
+        return new AttackResolution
+        {
+            AttackerId = attackerId,
+            DefenderId = defenderId,
+            TurnIndex = turnIndex,
+            AttackZone = attackZone,
+            DefenderBlockPrimary = defenderAction.BlockZonePrimary,
+            DefenderBlockSecondary = defenderAction.BlockZoneSecondary,
+            WasBlocked = isBlocked,
+            WasCrit = isCrit,
+            Outcome = outcome,
+            Damage = damage
+        };
     }
 }
 

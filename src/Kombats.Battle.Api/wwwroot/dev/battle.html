@@ -142,6 +142,10 @@
         .log-entry.warning {
             color: #ffc107;
         }
+        .log-entry.critical {
+            color: #dc3545;
+            font-weight: bold;
+        }
         .full-width {
             grid-column: 1 / -1;
         }
@@ -347,7 +351,14 @@
             });
 
             connection.on("TurnResolved", (data) => {
-                log(`TurnResolved: Turn ${data.turnIndex}, PlayerA: ${data.playerAAction}, PlayerB: ${data.playerBAction}`, 'success');
+                // Display detailed combat log if available
+                if (data.log) {
+                    displayCombatLog(data.log);
+                } else {
+                    // Fallback for older backend versions
+                    log(`Turn ${data.turnIndex} resolved.`, 'success');
+                }
+                
                 if (typeof data.nextTurnIndex === 'number') {
                     currentTurnIndex = data.nextTurnIndex;
                 }
@@ -542,6 +553,107 @@
     function isValidGuid(str) {
         const guidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         return guidRegex.test(str);
+    }
+
+    function formatGuidShort(guid) {
+        if (!guid) return 'unknown';
+        const str = guid.toString();
+        if (str.length < 13) return str;
+        return str.substring(0, 8) + '…' + str.substring(str.length - 4);
+    }
+
+    function formatZone(zone) {
+        if (!zone) return null;
+        // Map zone values to readable names
+        const zoneMap = {
+            'Head': 'Head',
+            'Chest': 'Chest',
+            'Belly': 'Belly',
+            'Waist': 'Waist',
+            'Legs': 'Legs'
+        };
+        return zoneMap[zone] || zone;
+    }
+
+    function displayCombatLog(turnLog) {
+        const turnIndex = turnLog.turnIndex;
+        const aToB = turnLog.atoB;
+        const bToA = turnLog.btoA;
+
+        // Format A to B attack
+        const aToBLine = formatAttackResolution(turnIndex, aToB);
+        if (aToBLine) {
+            const isCritical = aToB && (aToB.outcome === 'CriticalHit' || aToB.outcome === 'CriticalBypassBlock' || aToB.outcome === 'CriticalHybridBlocked');
+            log(aToBLine, isCritical ? 'critical' : 'info');
+        }
+
+        // Format B to A attack
+        const bToALine = formatAttackResolution(turnIndex, bToA);
+        if (bToALine) {
+            const isCritical = bToA && (bToA.outcome === 'CriticalHit' || bToA.outcome === 'CriticalBypassBlock' || bToA.outcome === 'CriticalHybridBlocked');
+            log(bToALine, isCritical ? 'critical' : 'info');
+        }
+    }
+
+    function formatAttackResolution(turnIndex, resolution) {
+        if (!resolution) return null;
+
+        const attackerIdShort = formatGuidShort(resolution.attackerId);
+        const defenderIdShort = formatGuidShort(resolution.defenderId);
+        const outcome = resolution.outcome; // Should be string from server
+
+        // Handle NoAction
+        if (outcome === 'NoAction' || !resolution.attackZone) {
+            return `Turn ${turnIndex}: ${attackerIdShort} did NoAction.`;
+        }
+
+        const attackZone = formatZone(resolution.attackZone);
+        if (!attackZone) {
+            return `Turn ${turnIndex}: ${attackerIdShort} did NoAction.`;
+        }
+
+        let line = `Turn ${turnIndex}: ${attackerIdShort} attacks ${attackZone} → ${defenderIdShort} `;
+
+        // Format based on outcome - NEVER show 0 damage
+        if (outcome === 'Dodged') {
+            line += 'DODGED.';
+        } else if (outcome === 'Blocked') {
+            line += 'BLOCKED.';
+        } else if (outcome === 'Hit') {
+            // Only show damage if > 0 (invariant: Hit should have damage > 0)
+            if (resolution.damage > 0) {
+                line += `hit for ${resolution.damage}.`;
+            } else {
+                line += 'hit.'; // Fallback if invariant broken
+            }
+        } else if (outcome === 'CriticalHit') {
+            if (resolution.damage > 0) {
+                line += `CRITICAL HIT for ${resolution.damage}`;
+            } else {
+                line += 'CRITICAL HIT'; // Fallback
+            }
+        } else if (outcome === 'CriticalBypassBlock') {
+            if (resolution.damage > 0) {
+                line += `CRITICAL bypassed block for ${resolution.damage}`;
+            } else {
+                line += 'CRITICAL bypassed block'; // Fallback
+            }
+        } else if (outcome === 'CriticalHybridBlocked') {
+            if (resolution.damage > 0) {
+                line += `CRITICAL (hybrid) through block for ${resolution.damage}`;
+            } else {
+                line += 'CRITICAL (hybrid) through block'; // Fallback
+            }
+        } else {
+            // Unknown outcome - log as-is but don't show damage if 0
+            if (resolution.damage > 0) {
+                line += `${outcome} for ${resolution.damage}.`;
+            } else {
+                line += `${outcome}.`;
+            }
+        }
+
+        return line;
     }
 
     window.onload = function() {

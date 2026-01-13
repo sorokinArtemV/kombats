@@ -103,6 +103,59 @@ internal static class RealtimeContractMapper
 
         return result;
     }
+
+    /// <summary>
+    /// Maps domain AttackOutcome to AttackOutcomeRealtime.
+    /// </summary>
+    public static AttackOutcomeRealtime ToRealtimeAttackOutcome(AttackOutcome outcome)
+    {
+        return outcome switch
+        {
+            AttackOutcome.NoAction => AttackOutcomeRealtime.NoAction,
+            AttackOutcome.Dodged => AttackOutcomeRealtime.Dodged,
+            AttackOutcome.Blocked => AttackOutcomeRealtime.Blocked,
+            AttackOutcome.Hit => AttackOutcomeRealtime.Hit,
+            AttackOutcome.CriticalHit => AttackOutcomeRealtime.CriticalHit,
+            AttackOutcome.CriticalBypassBlock => AttackOutcomeRealtime.CriticalBypassBlock,
+            AttackOutcome.CriticalHybridBlocked => AttackOutcomeRealtime.CriticalHybridBlocked,
+            _ => throw new ArgumentException($"Unknown AttackOutcome: {outcome}", nameof(outcome))
+        };
+    }
+
+    /// <summary>
+    /// Maps domain AttackResolution to AttackResolutionRealtime.
+    /// Does not expose RNG roll numbers or chance values.
+    /// </summary>
+    public static AttackResolutionRealtime ToRealtimeAttackResolution(AttackResolution resolution)
+    {
+        return new AttackResolutionRealtime
+        {
+            AttackerId = resolution.AttackerId,
+            DefenderId = resolution.DefenderId,
+            TurnIndex = resolution.TurnIndex,
+            AttackZone = resolution.AttackZone?.ToString(),
+            DefenderBlockPrimary = resolution.DefenderBlockPrimary?.ToString(),
+            DefenderBlockSecondary = resolution.DefenderBlockSecondary?.ToString(),
+            WasBlocked = resolution.WasBlocked,
+            WasCrit = resolution.WasCrit,
+            Outcome = ToRealtimeAttackOutcome(resolution.Outcome),
+            Damage = resolution.Damage
+        };
+    }
+
+    /// <summary>
+    /// Maps domain TurnResolutionLog to TurnResolutionLogRealtime.
+    /// </summary>
+    public static TurnResolutionLogRealtime ToRealtimeTurnResolutionLog(TurnResolutionLog log)
+    {
+        return new TurnResolutionLogRealtime
+        {
+            BattleId = log.BattleId,
+            TurnIndex = log.TurnIndex,
+            AtoB = ToRealtimeAttackResolution(log.AtoB),
+            BtoA = ToRealtimeAttackResolution(log.BtoA)
+        };
+    }
 }
 
 

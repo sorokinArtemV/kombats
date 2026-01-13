@@ -116,8 +116,14 @@ builder.Services.AddScoped<PlayerActionNormalizer>();
 builder.Services.AddScoped<BattleLifecycleAppService>();
 builder.Services.AddScoped<BattleTurnAppService>();
 
-// Configure SignalR
-builder.Services.AddSignalR();
+// Configure SignalR with JSON options to serialize enums as strings
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+}).AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
 
 // Configure messaging with typed DbContext for outbox/inbox support
 builder.Services.AddMessaging<BattleDbContext>(

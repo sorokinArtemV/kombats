@@ -1,3 +1,4 @@
+using Kombats.Battle.Domain.Results;
 using Kombats.Battle.Domain.Rules;
 
 namespace Kombats.Battle.Application.Abstractions;
@@ -10,7 +11,7 @@ public interface IBattleRealtimeNotifier
 {
     public Task NotifyBattleReadyAsync(Guid battleId, Guid playerAId, Guid playerBId, CancellationToken cancellationToken = default);
     public Task NotifyTurnOpenedAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default);
-    public Task NotifyTurnResolvedAsync(Guid battleId, int turnIndex, string playerAAction, string playerBAction, CancellationToken cancellationToken = default);
+    public Task NotifyTurnResolvedAsync(Guid battleId, int turnIndex, string playerAAction, string playerBAction, TurnResolutionLog? log = null, CancellationToken cancellationToken = default);
     public Task NotifyPlayerDamagedAsync(Guid battleId, Guid playerId, int damage, int remainingHp, int turnIndex, CancellationToken cancellationToken = default);
     public Task NotifyBattleStateUpdatedAsync(
         Guid battleId,

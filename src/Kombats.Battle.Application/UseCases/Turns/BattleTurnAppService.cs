@@ -332,6 +332,7 @@ public class BattleTurnAppService
                         turnIndex,
                         FormatAction(turnResolved.PlayerAAction),
                         FormatAction(turnResolved.PlayerBAction),
+                        turnResolved.Log,
                         cancellationToken);
 
                     await _notifier.NotifyTurnOpenedAsync(

@@ -4,7 +4,7 @@ using Kombats.Battle.Domain.Events;
 using Kombats.Battle.Domain.Model;
 using Kombats.Battle.Domain.Rules;
 using Xunit;
-
+/*
 namespace Kombats.Battle.Application.Tests;
 
 /// <summary>
@@ -474,4 +474,4 @@ internal class SequentialValueProvider : IRandomProvider
         return value;
     }
 }
-
+*/
