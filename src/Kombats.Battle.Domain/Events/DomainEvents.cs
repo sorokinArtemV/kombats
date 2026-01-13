@@ -11,6 +11,7 @@ public sealed record TurnResolvedDomainEvent(
     int TurnIndex,
     PlayerAction PlayerAAction,
     PlayerAction PlayerBAction,
+    TurnResolutionLog Log,
     DateTime OccurredAt) : IDomainEvent;
 
 /// <summary>

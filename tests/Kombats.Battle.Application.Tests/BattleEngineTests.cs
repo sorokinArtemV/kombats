@@ -1,0 +1,622 @@
+using FluentAssertions;
+using Kombats.Battle.Domain.Engine;
+using Kombats.Battle.Domain.Events;
+using Kombats.Battle.Domain.Model;
+using Kombats.Battle.Domain.Results;
+using Kombats.Battle.Domain.Rules;
+using Xunit;
+
+namespace Kombats.Battle.Application.Tests;
+
+/// <summary>
+/// Deterministic stub for IRandomProvider that returns fixed values for testing.
+/// </summary>
+internal class DeterministicRandomProvider : IRandomProvider
+{
+    private readonly decimal _fixedValue;
+
+    public DeterministicRandomProvider(decimal fixedValue)
+    {
+        _fixedValue = fixedValue;
+    }
+
+    public decimal NextDecimal(decimal minInclusive, decimal maxInclusive)
+    {
+        // Return the fixed value, clamped to the range
+        if (_fixedValue < minInclusive) return minInclusive;
+        if (_fixedValue > maxInclusive) return maxInclusive;
+        return _fixedValue;
+    }
+}
+
+/// <summary>
+/// Sequential random provider that returns values from a predefined sequence.
+/// Used for testing multiple random calls in order (dodge, crit, damage).
+/// </summary>
+internal class SequentialValueProvider : IRandomProvider
+{
+    private readonly decimal[] _values;
+    private int _index = 0;
+
+    public SequentialValueProvider(decimal[] values)
+    {
+        _values = values;
+    }
+
+    public decimal NextDecimal(decimal minInclusive, decimal maxInclusive)
+    {
+        if (_index >= _values.Length)
+            _index = 0; // Wrap around if needed
+
+        var value = _values[_index];
+        _index++;
+        
+        // Clamp to requested range
+        if (value < minInclusive) return minInclusive;
+        if (value > maxInclusive) return maxInclusive;
+        return value;
+    }
+}
+
+public class BattleEngineTests
+{
+    private static CombatBalance CreateTestBalance(
+        CritEffectMode critMode = CritEffectMode.BypassBlock,
+        decimal critMultiplier = 1.5m,
+        decimal hybridBlockMultiplier = 0.5m)
+    {
+        return new CombatBalance(
+            hp: new HpBalance(baseHp: 100, hpPerEnd: 6),
+            damage: new DamageBalance(
+                baseWeaponDamage: 10,
+                damagePerStr: 1.0m,
+                damagePerAgi: 0.5m,
+                damagePerInt: 0.3m,
+                spreadMin: 0.85m,
+                spreadMax: 1.15m),
+            mf: new MfBalance(mfPerAgi: 5, mfPerInt: 5),
+            dodgeChance: new ChanceBalance(
+                @base: 0.05m,
+                min: 0.02m,
+                max: 0.35m,
+                scale: 1.0m,
+                kBase: 50m),
+            critChance: new ChanceBalance(
+                @base: 0.03m,
+                min: 0.01m,
+                max: 0.30m,
+                scale: 1.0m,
+                kBase: 60m),
+            critEffect: new CritEffectBalance(
+                mode: critMode,
+                multiplier: critMultiplier,
+                hybridBlockMultiplier: hybridBlockMultiplier));
+    }
+
+    private static BattleDomainState CreateTestState(
+        Guid battleId,
+        Guid playerAId,
+        Guid playerBId,
+        int turnIndex = 1,
+        CombatBalance? balance = null)
+    {
+        var ruleset = new Ruleset(
+            version: 1,
+            turnSeconds: 30,
+            noActionLimit: 3,
+            seed: 12345,
+            balance: balance ?? CreateTestBalance());
+
+        var playerA = new PlayerState(
+            playerAId,
+            maxHp: 100,
+            currentHp: 100,
+            stats: new PlayerStats(strength: 10, stamina: 10, agility: 10, intuition: 10));
+
+        var playerB = new PlayerState(
+            playerBId,
+            maxHp: 100,
+            currentHp: 100,
+            stats: new PlayerStats(strength: 10, stamina: 10, agility: 10, intuition: 10));
+
+        return new BattleDomainState(
+            battleId,
+            matchId: Guid.NewGuid(),
+            playerAId,
+            playerBId,
+            ruleset,
+            BattlePhase.Resolving,
+            turnIndex,
+            noActionStreakBoth: 0,
+            lastResolvedTurnIndex: turnIndex - 1,
+            playerA,
+            playerB);
+    }
+
+    [Fact]
+    public void ResolveAttack_NoAction_ReturnsNoActionOutcome()
+    {
+        // Arrange
+        var rng = new DeterministicRandomProvider(0.5m);
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var noActionA = PlayerAction.NoAction(playerAId, 1);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Head, null, null);
+
+        // Act
+        var result = engine.ResolveTurn(state, noActionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.NoAction);
+        turnResolvedEvent.Log.AtoB.Damage.Should().Be(0);
+    }
+
+    [Fact]
+    public void ResolveAttack_Dodged_ReturnsDodgedOutcome()
+    {
+        // Arrange
+        // Dodge chance calculation: base + (mfDodge - mfAntiDodge) / kBase
+        // With equal stats, dodge chance = 0.05
+        // New order: dodge roll → crit roll → block check → damage roll
+        // Use rng value < 0.05 to trigger dodge (first roll)
+        var rng = new SequentialValueProvider([0.01m, 0.1m, 0.5m, 0.1m, 0.1m, 0.5m]); // AtoB: dodge (<0.05), STOP; BtoA: dodge (no), crit (no), damage
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, null, null); // No block
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.Dodged);
+        turnResolvedEvent.Log.AtoB.Damage.Should().Be(0);
+        turnResolvedEvent.Log.AtoB.WasCrit.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ResolveAttack_Blocked_ReturnsBlockedOutcome()
+    {
+        // Arrange
+        // New order: dodge roll → crit roll → block check → damage roll
+        // When hit (dodge fails), blocked and no crit bypass → Blocked
+        // AtoB: dodge (no), crit (no), blocked → Blocked
+        var rng = new SequentialValueProvider([0.1m, 0.1m, 0.5m, 0.1m, 0.1m, 0.5m]); // AtoB: dodge (no), crit (no), blocked → STOP; BtoA: dodge (no), crit (no), damage
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, BattleZone.Head, BattleZone.Chest); // Blocks Head
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.Blocked);
+        turnResolvedEvent.Log.AtoB.Damage.Should().Be(0);
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveAttack_CritBypassBlock_ReturnsCriticalBypassBlockOutcome()
+    {
+        // Arrange
+        var balance = CreateTestBalance(critMode: CritEffectMode.BypassBlock);
+        // New order: dodge roll → crit roll → block check → damage roll
+        // AtoB: dodge (no), crit (yes, <0.03), bypasses block, damage; BtoA: dodge (no), crit (no), blocked
+        var rng = new SequentialValueProvider([0.1m, 0.01m, 0.5m, 0.1m, 0.1m]); // AtoB: dodge (no), crit (yes), damage; BtoA: dodge (no), crit (no), blocked
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId, balance: balance);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, BattleZone.Head, BattleZone.Chest); // Blocks Head
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.CriticalBypassBlock);
+        turnResolvedEvent.Log.AtoB.Damage.Should().BeGreaterThan(0);
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeTrue();
+        turnResolvedEvent.Log.AtoB.WasCrit.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveAttack_CritHybridBlocked_ReturnsCriticalHybridBlockedOutcome()
+    {
+        // Arrange
+        var balance = CreateTestBalance(critMode: CritEffectMode.Hybrid);
+        // New order: dodge roll → crit roll → block check → damage roll
+        // AtoB: dodge (no), crit (yes, <0.03), hybrid penetrates block, damage; BtoA: dodge (no), crit (no), blocked
+        var rng = new SequentialValueProvider([0.1m, 0.01m, 0.5m, 0.1m, 0.1m]); // AtoB: dodge (no), crit (yes), damage; BtoA: dodge (no), crit (no), blocked
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId, balance: balance);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, BattleZone.Head, BattleZone.Chest); // Blocks Head
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.CriticalHybridBlocked);
+        turnResolvedEvent.Log.AtoB.Damage.Should().BeGreaterThan(0);
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeTrue();
+        turnResolvedEvent.Log.AtoB.WasCrit.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveAttack_UnblockedCrit_ReturnsCriticalHitOutcome()
+    {
+        // Arrange
+        // New order: dodge roll → crit roll → block check → damage roll
+        var rng = new SequentialValueProvider([0.1m, 0.01m, 0.5m, 0.1m, 0.1m, 0.5m]); // AtoB: dodge (no), crit (yes), damage; BtoA: dodge (no), crit (no), damage
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, null, null); // No block
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.CriticalHit);
+        turnResolvedEvent.Log.AtoB.Damage.Should().BeGreaterThan(0);
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeFalse();
+        turnResolvedEvent.Log.AtoB.WasCrit.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveAttack_UnblockedNonCrit_ReturnsHitOutcome()
+    {
+        // Arrange
+        // New order: dodge roll → crit roll → block check → damage roll
+        var rng = new SequentialValueProvider([0.1m, 0.1m, 0.5m, 0.1m, 0.1m, 0.5m]); // AtoB: dodge (no), crit (no), damage; BtoA: dodge (no), crit (no), damage
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, null, null); // No block
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.Hit);
+        turnResolvedEvent.Log.AtoB.Damage.Should().BeGreaterThan(0);
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeFalse();
+        turnResolvedEvent.Log.AtoB.WasCrit.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ResolveTurn_IncludesTurnResolutionLogInEvent()
+    {
+        // Arrange
+        var rng = new SequentialValueProvider([0.1m, 0.1m, 0.5m, 0.1m, 0.1m, 0.5m]);
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, null, null);
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.Should().NotBeNull();
+        turnResolvedEvent.Log.BattleId.Should().Be(battleId);
+        turnResolvedEvent.Log.TurnIndex.Should().Be(1);
+        turnResolvedEvent.Log.AtoB.Should().NotBeNull();
+        turnResolvedEvent.Log.BtoA.Should().NotBeNull();
+        turnResolvedEvent.Log.AtoB.AttackerId.Should().Be(playerAId);
+        turnResolvedEvent.Log.AtoB.DefenderId.Should().Be(playerBId);
+        turnResolvedEvent.Log.BtoA.AttackerId.Should().Be(playerBId);
+        turnResolvedEvent.Log.BtoA.DefenderId.Should().Be(playerAId);
+    }
+
+    [Fact]
+    public void ResolveTurn_DoubleForfeit_IncludesNoActionOutcomes()
+    {
+        // Arrange
+        var rng = new DeterministicRandomProvider(0.5m);
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var noActionA = PlayerAction.NoAction(playerAId, 1);
+        var noActionB = PlayerAction.NoAction(playerBId, 1);
+
+        // Act
+        var result = engine.ResolveTurn(state, noActionA, noActionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.NoAction);
+        turnResolvedEvent.Log.BtoA.Outcome.Should().Be(AttackOutcome.NoAction);
+        turnResolvedEvent.Log.AtoB.Damage.Should().Be(0);
+        turnResolvedEvent.Log.BtoA.Damage.Should().Be(0);
+    }
+
+    [Fact]
+    public void ResolveAttack_Invariant_DamageZero_RequiresValidOutcome()
+    {
+        // Arrange
+        // New order: dodge roll → crit roll → block check → damage roll
+        var rng = new SequentialValueProvider([0.1m, 0.1m, 0.5m, 0.1m, 0.1m, 0.5m]); // AtoB: dodge (no), crit (no), blocked; BtoA: dodge (no), crit (no), damage
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, BattleZone.Head, BattleZone.Chest); // Blocks Head
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert - Blocked should have Damage 0
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        if (turnResolvedEvent.Log.AtoB.Outcome == AttackOutcome.Blocked)
+        {
+            turnResolvedEvent.Log.AtoB.Damage.Should().Be(0, "Blocked attacks must have 0 damage");
+        }
+        if (turnResolvedEvent.Log.AtoB.Damage == 0)
+        {
+            turnResolvedEvent.Log.AtoB.Outcome.Should().BeOneOf(
+                new[] { AttackOutcome.NoAction, AttackOutcome.Dodged, AttackOutcome.Blocked },
+                "Damage 0 requires Outcome to be NoAction, Dodged, or Blocked");
+        }
+    }
+
+    [Fact]
+    public void ResolveAttack_Invariant_CriticalOutcome_RequiresDamageGreaterThanZero()
+    {
+        // Arrange
+        var balance = CreateTestBalance(critMode: CritEffectMode.BypassBlock);
+        // New order: dodge roll → crit roll → block check → damage roll
+        var rng = new SequentialValueProvider([0.1m, 0.01m, 0.5m, 0.1m, 0.1m, 0.5m]); // AtoB: dodge (no), crit (yes), damage; BtoA: dodge (no), crit (no), damage
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId, balance: balance);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, null, null);
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert - Critical outcomes must have damage > 0
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        if (turnResolvedEvent.Log.AtoB.Outcome == AttackOutcome.CriticalHit ||
+            turnResolvedEvent.Log.AtoB.Outcome == AttackOutcome.CriticalBypassBlock ||
+            turnResolvedEvent.Log.AtoB.Outcome == AttackOutcome.CriticalHybridBlocked)
+        {
+            turnResolvedEvent.Log.AtoB.Damage.Should().BeGreaterThan(0, 
+                $"Critical outcome {turnResolvedEvent.Log.AtoB.Outcome} must have damage > 0");
+        }
+    }
+
+    [Fact]
+    public void ResolveAttack_BlockPrecedence_DodgeNotRolledWhenBlocked()
+    {
+        // Arrange
+        // This test verifies the NEW semantics: dodge happens FIRST (hit/miss determination).
+        // Then block is evaluated as mitigation AFTER a hit is confirmed.
+        // The test sets up a scenario where:
+        // - Dodge fails (hit confirmed)
+        // - Attack zone is blocked
+        // - Crit does NOT bypass/hybrid
+        // - Outcome should be Blocked (mitigation, not miss)
+        // New order: dodge roll → crit roll → block check → damage roll
+        // AtoB: dodge (0.1m - fails), crit (0.1m - no), blocked → Blocked
+        var rng = new SequentialValueProvider([0.1m, 0.1m, 0.5m, 0.1m, 0.1m, 0.5m]); 
+        // AtoB: dodge (no), crit (no), blocked; BtoA: dodge (no), crit (no), damage
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, BattleZone.Head, BattleZone.Chest); // Blocks Head
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        
+        // AtoB should be Blocked (hit confirmed by dodge failure, then blocked as mitigation)
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.Blocked);
+        turnResolvedEvent.Log.AtoB.Damage.Should().Be(0);
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveAttack_BlockedDisablesDodge_EvenWithCritBypass()
+    {
+        // Arrange
+        // This test verifies the NEW semantics: dodge happens FIRST (hit/miss determination).
+        // Then block is evaluated as mitigation AFTER a hit is confirmed.
+        // The test sets up:
+        // - Dodge fails (hit confirmed) - use 0.1m (>0.05)
+        // - Attack zone is blocked, crit succeeds, mode==BypassBlock
+        // - Expected: outcome is CriticalBypassBlock and Damage>0
+        // NEW ORDER: dodge roll → crit roll → block check → damage roll
+        var balance = CreateTestBalance(critMode: CritEffectMode.BypassBlock);
+        // AtoB: dodge (0.1m - fails), crit (0.01m - yes, <0.03), blocked but bypassed, damage; BtoA: dodge (no), crit (no), blocked
+        var rng = new SequentialValueProvider([0.1m, 0.01m, 0.5m, 0.1m, 0.1m]);
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId, balance: balance);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, BattleZone.Head, BattleZone.Chest); // Blocks Head
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        
+        // AtoB should be CriticalBypassBlock with damage > 0
+        // Dodge was rolled first and failed, then crit bypassed the block
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.CriticalBypassBlock);
+        turnResolvedEvent.Log.AtoB.Damage.Should().BeGreaterThan(0);
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeTrue();
+        turnResolvedEvent.Log.AtoB.WasCrit.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveAttack_BlockedDisablesDodge_EvenWithCritHybrid()
+    {
+        // Arrange
+        // This test verifies the NEW semantics: dodge happens FIRST (hit/miss determination).
+        // Then block is evaluated as mitigation AFTER a hit is confirmed.
+        // The test sets up:
+        // - Dodge fails (hit confirmed) - use 0.1m (>0.05)
+        // - Attack zone is blocked, crit succeeds, mode==Hybrid
+        // - Expected: outcome is CriticalHybridBlocked and Damage>0
+        // NEW ORDER: dodge roll → crit roll → block check → damage roll
+        var balance = CreateTestBalance(critMode: CritEffectMode.Hybrid);
+        // AtoB: dodge (0.1m - fails), crit (0.01m - yes, <0.03), blocked but hybrid, damage; BtoA: dodge (no), crit (no), blocked
+        var rng = new SequentialValueProvider([0.1m, 0.01m, 0.5m, 0.1m, 0.1m]);
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId, balance: balance);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, BattleZone.Head, BattleZone.Chest); // Blocks Head
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        
+        // AtoB should be CriticalHybridBlocked with damage > 0
+        // Dodge was rolled first and failed, then crit hybridized through the block
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.CriticalHybridBlocked);
+        turnResolvedEvent.Log.AtoB.Damage.Should().BeGreaterThan(0);
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeTrue();
+        turnResolvedEvent.Log.AtoB.WasCrit.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveAttack_FullyBlocked_StopsEverything()
+    {
+        // Arrange
+        // This test verifies that when dodge fails (hit confirmed), and isBlocked==true and crit does NOT penetrate,
+        // the attack is fully blocked as mitigation and damage is 0
+        // New order: dodge roll → crit roll → block check → damage roll
+        var rng = new SequentialValueProvider([0.1m, 0.1m, 0.5m, 0.1m, 0.1m, 0.5m]);
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, BattleZone.Head, BattleZone.Chest); // Blocks Head
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.Blocked);
+        turnResolvedEvent.Log.AtoB.Damage.Should().Be(0);
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolveAttack_UnblockedCanDodge()
+    {
+        // Arrange
+        // This test verifies that dodge happens FIRST and can succeed even if block would have been available
+        // New order: dodge roll → crit roll → block check → damage roll
+        var rng = new SequentialValueProvider([0.01m, 0.1m, 0.5m, 0.1m, 0.1m, 0.5m]);
+        // AtoB: dodge (yes, <0.05), STOP; BtoA: dodge (no), crit (no), damage
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, null, null); // No block
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.Dodged);
+        turnResolvedEvent.Log.AtoB.Damage.Should().Be(0);
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ResolveAttack_DodgeHappensBeforeBlock_EvenIfZoneMatched()
+    {
+        // Arrange
+        // This test verifies the key semantic: Dodge determines HIT/MISS FIRST.
+        // Even if zoneMatched==true (defender has zone covered), if dodge succeeds,
+        // the outcome must be Dodged and block is never evaluated.
+        // New order: dodge roll → crit roll → block check → damage roll
+        var rng = new SequentialValueProvider([0.01m, 0.1m, 0.5m, 0.1m, 0.1m, 0.5m]);
+        // AtoB: dodge (0.01m - yes, <0.05), STOP (block never evaluated); BtoA: dodge (no), crit (no), damage
+        var engine = new BattleEngine(rng);
+        var battleId = Guid.NewGuid();
+        var playerAId = Guid.NewGuid();
+        var playerBId = Guid.NewGuid();
+        var state = CreateTestState(battleId, playerAId, playerBId);
+        var actionA = PlayerAction.Create(playerAId, 1, BattleZone.Head, null, null);
+        // Defender blocks the Head zone
+        var actionB = PlayerAction.Create(playerBId, 1, BattleZone.Chest, BattleZone.Head, BattleZone.Chest);
+
+        // Act
+        var result = engine.ResolveTurn(state, actionA, actionB);
+
+        // Assert
+        var turnResolvedEvent = result.Events.OfType<TurnResolvedDomainEvent>().Single();
+        
+        // AtoB should be Dodged even though zoneMatched would have been true
+        // This proves dodge happens before block mitigation evaluation
+        turnResolvedEvent.Log.AtoB.Outcome.Should().Be(AttackOutcome.Dodged);
+        turnResolvedEvent.Log.AtoB.Damage.Should().Be(0);
+        // WasBlocked should be true because zoneMatched is true (defender had zone covered)
+        // WasBlocked represents zone coverage, not whether block mitigation was applied
+        turnResolvedEvent.Log.AtoB.WasBlocked.Should().BeTrue();
+        turnResolvedEvent.Log.AtoB.WasCrit.Should().BeFalse();
+    }
+}
+

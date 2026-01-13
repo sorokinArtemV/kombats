@@ -22,6 +22,7 @@ public class RedisBattleStateStore : IBattleStateStore
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisBattleStateStore> _logger;
     private readonly BattleRedisOptions _options;
+    private readonly IClock _clock;
     
     private const string StateKeyPrefix = "battle:state:";
     private const string ActionKeyPrefix = "battle:action:";
@@ -34,11 +35,13 @@ public class RedisBattleStateStore : IBattleStateStore
     public RedisBattleStateStore(
         IConnectionMultiplexer redis,
         ILogger<RedisBattleStateStore> logger,
-        IOptions<BattleRedisOptions> options)
+        IOptions<BattleRedisOptions> options,
+        IClock clock)
     {
         _redis = redis;
         _logger = logger;
         _options = options.Value;
+        _clock = clock;
     }
 
     // Helper method for unix milliseconds conversion (ZSET scores and state JSON use unixMs for consistency)
@@ -58,7 +61,7 @@ public class RedisBattleStateStore : IBattleStateStore
         var key = GetStateKey(battleId);
 
         // Convert Domain state to Infrastructure storage model
-        var deadlineUtc = DateTime.UtcNow; // ArenaOpen deadline is meaningless but consistent
+        var deadlineUtc = _clock.UtcNow; // ArenaOpen deadline is meaningless but consistent
         var state = StoredStateMapper.FromDomainState(initialState, deadlineUtc, version: 1);
 
         // Use SETNX for idempotent initialization

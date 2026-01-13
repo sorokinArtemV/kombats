@@ -9,6 +9,15 @@ namespace Kombats.Battle.Infrastructure.State.Redis;
 /// This is the concrete type stored in Redis.
 /// Uses domain models for Ruleset and BattlePhase.
 /// </summary>
+/// <remarks>
+/// Baseline value for a battle before the first turn is opened.
+/// We intentionally use 0 (not -1) so that Turn 1 can be opened when
+/// LastResolvedTurnIndex == (turnIndex - 1).
+///
+/// IMPORTANT:
+/// Redis TryOpenTurn Lua script relies on this convention.
+/// Do NOT change this value without updating the Lua gate conditions.
+/// </remarks>
 public class BattleState
 {
     public Guid BattleId { get; set; }

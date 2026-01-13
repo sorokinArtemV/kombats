@@ -101,11 +101,45 @@ public sealed class BattleEngine : IBattleEngine
 
             continuingState.UpdateNoActionStreak(newStreak);
 
+            // Create turn resolution log for DoubleForfeit (both NoAction)
+            var doubleForfeitLog = new TurnResolutionLog
+            {
+                BattleId = state.BattleId,
+                TurnIndex = state.TurnIndex,
+                AtoB = new AttackResolution
+                {
+                    AttackerId = state.PlayerAId,
+                    DefenderId = state.PlayerBId,
+                    TurnIndex = state.TurnIndex,
+                    AttackZone = null,
+                    DefenderBlockPrimary = null,
+                    DefenderBlockSecondary = null,
+                    WasBlocked = false,
+                    WasCrit = false,
+                    Outcome = AttackOutcome.NoAction,
+                    Damage = 0
+                },
+                BtoA = new AttackResolution
+                {
+                    AttackerId = state.PlayerBId,
+                    DefenderId = state.PlayerAId,
+                    TurnIndex = state.TurnIndex,
+                    AttackZone = null,
+                    DefenderBlockPrimary = null,
+                    DefenderBlockSecondary = null,
+                    WasBlocked = false,
+                    WasCrit = false,
+                    Outcome = AttackOutcome.NoAction,
+                    Damage = 0
+                }
+            };
+
             events.Add(new TurnResolvedDomainEvent(
                 state.BattleId,
                 state.TurnIndex,
                 normalizedActionA,
                 normalizedActionB,
+                doubleForfeitLog,
                 now));
 
             return new BattleResolutionResult
@@ -118,47 +152,62 @@ public sealed class BattleEngine : IBattleEngine
         // Reset streak if at least one player acted
         var resetStreak = 0;
 
-        // Calculate damage simultaneously (order must not matter)
-        // Damage from A to B
-        int damageToB = CalculateDamage(
+        // Resolve attacks simultaneously (order must not matter)
+        // Attack from A to B
+        var resolutionAtoB = ResolveAttack(
             normalizedActionA,
             normalizedActionB,
             playerA.Stats,
             playerB.Stats,
+            state.PlayerAId,
+            state.PlayerBId,
+            state.TurnIndex,
             state.Ruleset);
 
-        // Damage from B to A
-        int damageToA = CalculateDamage(
+        // Attack from B to A
+        var resolutionBtoA = ResolveAttack(
             normalizedActionB,
             normalizedActionA,
             playerB.Stats,
             playerA.Stats,
+            state.PlayerBId,
+            state.PlayerAId,
+            state.TurnIndex,
             state.Ruleset);
 
         // Apply damage to starting HP of the turn (simultaneous)
-        if (damageToB > 0 && playerB.IsAlive)
+        if (resolutionAtoB.Damage > 0 && playerB.IsAlive)
         {
-            playerB.ApplyDamage(damageToB);
+            playerB.ApplyDamage(resolutionAtoB.Damage);
             events.Add(new PlayerDamagedDomainEvent(
                 state.BattleId,
                 state.PlayerBId,
-                damageToB,
+                resolutionAtoB.Damage,
                 playerB.CurrentHp,
                 state.TurnIndex,
                 now));
         }
 
-        if (damageToA > 0 && playerA.IsAlive)
+        if (resolutionBtoA.Damage > 0 && playerA.IsAlive)
         {
-            playerA.ApplyDamage(damageToA);
+            playerA.ApplyDamage(resolutionBtoA.Damage);
             events.Add(new PlayerDamagedDomainEvent(
                 state.BattleId,
                 state.PlayerAId,
-                damageToA,
+                resolutionBtoA.Damage,
                 playerA.CurrentHp,
                 state.TurnIndex,
                 now));
         }
+
+        // Create turn resolution log
+        var turnLog = new TurnResolutionLog
+        {
+            BattleId = state.BattleId,
+            TurnIndex = state.TurnIndex,
+            AtoB = resolutionAtoB,
+            BtoA = resolutionBtoA
+        };
 
         // Check for battle end due to player death
         var winnerId = (Guid?)null;
@@ -231,6 +280,7 @@ public sealed class BattleEngine : IBattleEngine
                 state.TurnIndex,
                 normalizedActionA,
                 normalizedActionB,
+                turnLog,
                 now));
         }
 
@@ -270,101 +320,248 @@ public sealed class BattleEngine : IBattleEngine
     }
 
     /// <summary>
-    /// Calculates damage from attacker to defender.
-    /// Returns 0 if attacker is NoAction, attack is dodged, or attack is blocked (unless crit bypasses block).
+    /// Resolves an attack from attacker to defender, returning detailed resolution.
     /// 
-    /// ORDER MUST BE EXACTLY:
-    /// 1. if NoAction -> return 0
-    /// 2. check block via BattleZoneHelper
-    /// 3. compute derivedAtt / derivedDef via CombatMath
-    /// 4. roll dodge: if rng < ComputeDodgeChance -> return 0
-    /// 5. roll crit (BEFORE resolving block result): isCrit = rng < ComputeCritChance
-    /// 6. if blocked:
-    ///    - if isCrit AND CritEffect.Mode == BypassBlock -> damage passes
-    ///    - if isCrit AND CritEffect.Mode == Hybrid -> damage reduced by HybridBlockMultiplier
-    ///    - else -> return 0
-    /// 7. roll base damage
-    /// 8. if isCrit -> apply CritEffect.Multiplier
-    /// 9. return rounded damage (AwayFromZero)
+    /// AUTHORITATIVE RESOLUTION ORDER:
+    /// 1) NoAction -> Outcome = NoAction, Damage = 0
+    /// 2) Compute derived stats via CombatMath.ComputeDerived
+    /// 3) Roll Dodge FIRST (hit/miss):
+    ///    - If dodged => Outcome = Dodged, Damage = 0. STOP.
+    /// 4) If hit, then evaluate Block mitigation:
+    ///    - zoneMatched = BattleZoneHelper.IsZoneBlocked(attackZone, defenderBlockPrimary, defenderBlockSecondary)
+    ///    - Roll Crit (same logic as current; chance formula unchanged)
+    ///    - If zoneMatched:
+    ///        - If isCrit and mode==BypassBlock => treat as "block ignored", proceed to damage.
+    ///          Outcome later must become CriticalBypassBlock.
+    ///        - If isCrit and mode==Hybrid => proceed to damage but apply HybridBlockMultiplier.
+    ///          Outcome later must become CriticalHybridBlocked.
+    ///        - Else => Outcome = Blocked, Damage = 0. STOP. (This is mitigation, not miss.)
+    /// 5) If not blocked (zoneMatched==false) OR block was bypassed/hybridized:
+    ///    - Roll base damage via CombatMath.RollDamage
+    ///    - If isCrit => apply CritEffect.Multiplier
+    ///    - If hybrid => also apply CritEffect.HybridBlockMultiplier
+    ///    - Round AwayFromZero
+    ///    - Outcome:
+    ///        - isCrit && zoneMatched && mode==BypassBlock => CriticalBypassBlock
+    ///        - isCrit && zoneMatched && mode==Hybrid => CriticalHybridBlocked
+    ///        - isCrit => CriticalHit
+    ///        - else => Hit
     /// </summary>
-    private int CalculateDamage(
+    private AttackResolution ResolveAttack(
         PlayerAction attackerAction,
         PlayerAction defenderAction,
         PlayerStats attackerStats,
         PlayerStats defenderStats,
+        Guid attackerId,
+        Guid defenderId,
+        int turnIndex,
         Ruleset ruleset)
     {
-        // 1. If attacker is NoAction, no damage
+        // 1. If NoAction -> Outcome = NoAction, Damage = 0
         if (attackerAction.IsNoAction || attackerAction.AttackZone == null)
         {
-            return 0;
+            return BuildResolution(
+                attackerId,
+                defenderId,
+                turnIndex,
+                attackZone: null,
+                defenderAction.BlockZonePrimary,
+                defenderAction.BlockZoneSecondary,
+                wasBlocked: false,
+                wasCrit: false,
+                AttackOutcome.NoAction,
+                damage: 0);
         }
 
-        // 2. Check if attack is blocked
         var attackZone = attackerAction.AttackZone.Value;
-        var isBlocked = BattleZoneHelper.IsZoneBlocked(
+
+        // 2. Compute derived stats via CombatMath.ComputeDerived
+        var derivedAtt = ComputeDerivedStats(attackerStats, ruleset.Balance);
+        var derivedDef = ComputeDerivedStats(defenderStats, ruleset.Balance);
+
+        // Check zoneMatched early for WasBlocked flag (represents whether defender had zone covered)
+        // This is separate from block mitigation logic which happens after dodge
+        var zoneMatched = BattleZoneHelper.IsZoneBlocked(
             attackZone,
             defenderAction.BlockZonePrimary,
             defenderAction.BlockZoneSecondary);
 
-        // 3. Compute derived stats
-        var derivedAtt = CombatMath.ComputeDerived(attackerStats, ruleset.Balance);
-        var derivedDef = CombatMath.ComputeDerived(defenderStats, ruleset.Balance);
-
-        // 4. Roll dodge
-        var dodgeChance = CombatMath.ComputeDodgeChance(derivedAtt, derivedDef, ruleset.Balance);
-        var dodgeRoll = _rng.NextDecimal(0, 1);
-        if (dodgeRoll < dodgeChance)
+        // 3. Roll Dodge FIRST (hit/miss)
+        var isDodged = RollDodge(derivedAtt, derivedDef, ruleset.Balance);
+        if (isDodged)
         {
-            return 0;
+            return BuildResolution(
+                attackerId,
+                defenderId,
+                turnIndex,
+                attackZone,
+                defenderAction.BlockZonePrimary,
+                defenderAction.BlockZoneSecondary,
+                wasBlocked: zoneMatched, // WasBlocked represents zoneMatched, not outcome
+                wasCrit: false,
+                AttackOutcome.Dodged,
+                damage: 0);
         }
 
-        // 5. Roll crit (BEFORE resolving block result)
-        var critChance = CombatMath.ComputeCritChance(derivedAtt, derivedDef, ruleset.Balance);
-        var critRoll = _rng.NextDecimal(0, 1);
-        var isCrit = critRoll < critChance;
+        // 4. If hit, then evaluate Block mitigation
 
-        // 6. Handle block (with crit penetration)
-        if (isBlocked)
+        // Roll Crit
+        var isCrit = RollCrit(derivedAtt, derivedDef, ruleset.Balance);
+
+        // Determine if block is bypassed or hybridized
+        var isBlockBypassed = zoneMatched && isCrit && ruleset.Balance.CritEffect.Mode == CritEffectMode.BypassBlock;
+        var isBlockHybridized = zoneMatched && isCrit && ruleset.Balance.CritEffect.Mode == CritEffectMode.Hybrid;
+        var isFullyBlocked = zoneMatched && !isBlockBypassed && !isBlockHybridized;
+
+        // If fully blocked, return Blocked (mitigation, not miss)
+        if (isFullyBlocked)
         {
-            if (isCrit && ruleset.Balance.CritEffect.Mode == CritEffectMode.BypassBlock)
-            {
-                // Crit bypasses block - damage passes
-            }
-            else if (isCrit && ruleset.Balance.CritEffect.Mode == CritEffectMode.Hybrid)
-            {
-                // Hybrid mode: damage reduced by HybridBlockMultiplier
-                // Continue to damage calculation with multiplier applied later
-            }
-            else
-            {
-                // Blocked - no damage
-                return 0;
-            }
+            return BuildResolution(
+                attackerId,
+                defenderId,
+                turnIndex,
+                attackZone,
+                defenderAction.BlockZonePrimary,
+                defenderAction.BlockZoneSecondary,
+                wasBlocked: true,
+                wasCrit: false,
+                AttackOutcome.Blocked,
+                damage: 0);
         }
 
-        // 7. Roll base damage
+        // 5. If not blocked (zoneMatched==false) OR block was bypassed/hybridized:
+        // Roll base damage
         decimal baseDamage = CombatMath.RollDamage(_rng, derivedAtt);
 
-        // 8. Apply crit multiplier if crit occurred
+        // Apply crit multiplier if crit occurred
         decimal finalDamage = baseDamage;
         if (isCrit)
         {
-            if (isBlocked && ruleset.Balance.CritEffect.Mode == CritEffectMode.Hybrid)
-            {
-                // Hybrid mode: apply both multiplier and block reduction
-                finalDamage = baseDamage * ruleset.Balance.CritEffect.Multiplier * ruleset.Balance.CritEffect.HybridBlockMultiplier;
-            }
-            else
-            {
-                // Normal crit: apply multiplier
-                finalDamage = baseDamage * ruleset.Balance.CritEffect.Multiplier;
-            }
+            finalDamage = baseDamage * ruleset.Balance.CritEffect.Multiplier;
         }
 
-        // 9. Return rounded damage (AwayFromZero)
-        return (int)Math.Round(finalDamage, MidpointRounding.AwayFromZero);
+        // If hybrid, also apply HybridBlockMultiplier
+        if (isBlockHybridized)
+        {
+            finalDamage = finalDamage * ruleset.Balance.CritEffect.HybridBlockMultiplier;
+        }
+
+        // Round AwayFromZero
+        var damage = (int)Math.Round(finalDamage, MidpointRounding.AwayFromZero);
+
+        // Handle edge case: if damage becomes 0, treat as Blocked
+        if (damage == 0)
+        {
+            return BuildResolution(
+                attackerId,
+                defenderId,
+                turnIndex,
+                attackZone,
+                defenderAction.BlockZonePrimary,
+                defenderAction.BlockZoneSecondary,
+                wasBlocked: zoneMatched,
+                wasCrit: false,
+                AttackOutcome.Blocked,
+                damage: 0);
+        }
+
+        // Determine outcome
+        AttackOutcome outcome;
+        if (isCrit && zoneMatched && ruleset.Balance.CritEffect.Mode == CritEffectMode.BypassBlock)
+        {
+            outcome = AttackOutcome.CriticalBypassBlock;
+        }
+        else if (isCrit && zoneMatched && ruleset.Balance.CritEffect.Mode == CritEffectMode.Hybrid)
+        {
+            outcome = AttackOutcome.CriticalHybridBlocked;
+        }
+        else if (isCrit)
+        {
+            outcome = AttackOutcome.CriticalHit;
+        }
+        else
+        {
+            outcome = AttackOutcome.Hit;
+        }
+
+        return BuildResolution(
+            attackerId,
+            defenderId,
+            turnIndex,
+            attackZone,
+            defenderAction.BlockZonePrimary,
+            defenderAction.BlockZoneSecondary,
+            wasBlocked: zoneMatched,
+            wasCrit: isCrit,
+            outcome,
+            damage);
+    }
+
+    /// <summary>
+    /// Factory method to build AttackResolution consistently.
+    /// </summary>
+    private static AttackResolution BuildResolution(
+        Guid attackerId,
+        Guid defenderId,
+        int turnIndex,
+        BattleZone? attackZone,
+        BattleZone? defenderBlockPrimary,
+        BattleZone? defenderBlockSecondary,
+        bool wasBlocked,
+        bool wasCrit,
+        AttackOutcome outcome,
+        int damage)
+    {
+        return new AttackResolution
+        {
+            AttackerId = attackerId,
+            DefenderId = defenderId,
+            TurnIndex = turnIndex,
+            AttackZone = attackZone,
+            DefenderBlockPrimary = defenderBlockPrimary,
+            DefenderBlockSecondary = defenderBlockSecondary,
+            WasBlocked = wasBlocked,
+            WasCrit = wasCrit,
+            Outcome = outcome,
+            Damage = damage
+        };
+    }
+
+    /// <summary>
+    /// Computes derived combat stats.
+    /// </summary>
+    private static DerivedCombatStats ComputeDerivedStats(PlayerStats stats, CombatBalance balance)
+    {
+        return CombatMath.ComputeDerived(stats, balance);
+    }
+
+    /// <summary>
+    /// Rolls crit chance and returns whether crit occurred.
+    /// </summary>
+    private bool RollCrit(
+        DerivedCombatStats attackerDerived,
+        DerivedCombatStats defenderDerived,
+        CombatBalance balance)
+    {
+        var critChance = CombatMath.ComputeCritChance(attackerDerived, defenderDerived, balance);
+        var critRoll = _rng.NextDecimal(0, 1);
+        return critRoll < critChance;
+    }
+
+    /// <summary>
+    /// Rolls dodge chance and returns whether dodge occurred.
+    /// Returns true if dodged, false if not.
+    /// </summary>
+    private bool RollDodge(
+        DerivedCombatStats attackerDerived,
+        DerivedCombatStats defenderDerived,
+        CombatBalance balance)
+    {
+        var dodgeChance = CombatMath.ComputeDodgeChance(attackerDerived, defenderDerived, balance);
+        var dodgeRoll = _rng.NextDecimal(0, 1);
+        return dodgeRoll < dodgeChance;
     }
 }
+
 
 

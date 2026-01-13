@@ -1,4 +1,5 @@
 using Kombats.Battle.Application.Abstractions;
+using Kombats.Battle.Domain.Results;
 using Kombats.Battle.Domain.Rules;
 using Combats.Battle.Realtime.Contracts;
 using Microsoft.AspNetCore.SignalR;
@@ -54,14 +55,15 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
             cancellationToken);
     }
 
-    public async Task NotifyTurnResolvedAsync(Guid battleId, int turnIndex, string playerAAction, string playerBAction, CancellationToken cancellationToken = default)
+    public async Task NotifyTurnResolvedAsync(Guid battleId, int turnIndex, string playerAAction, string playerBAction, TurnResolutionLog? log = null, CancellationToken cancellationToken = default)
     {
         var payload = new TurnResolvedRealtime
         {
             BattleId = battleId,
             TurnIndex = turnIndex,
             PlayerAAction = playerAAction,
-            PlayerBAction = playerBAction
+            PlayerBAction = playerBAction,
+            Log = log != null ? RealtimeContractMapper.ToRealtimeTurnResolutionLog(log) : null
         };
 
         await _hubContext.Clients.Group($"battle:{battleId}").SendAsync(
