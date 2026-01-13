@@ -12,3 +12,4 @@ public interface ISeedGenerator
     /// <returns>A random integer seed.</returns>
     int GenerateSeed();
 }
+

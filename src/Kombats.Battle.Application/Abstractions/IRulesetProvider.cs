@@ -32,3 +32,4 @@ public record RulesetWithoutSeed(
     int TurnSeconds,
     int NoActionLimit,
     CombatBalance Balance);
+

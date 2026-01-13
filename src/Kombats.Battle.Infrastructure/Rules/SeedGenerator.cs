@@ -17,3 +17,4 @@ public class SeedGenerator : ISeedGenerator
         return BitConverter.ToInt32(bytes);
     }
 }
+
