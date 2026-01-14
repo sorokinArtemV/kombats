@@ -32,48 +32,7 @@ public interface IBattleStateStore
         int playerBHp,
         CancellationToken cancellationToken = default);
     Task<List<Guid>> GetActiveBattlesAsync(CancellationToken cancellationToken = default);
-    
-    // Deadline index methods (Redis ZSET)
-    /// <summary>
-    /// Production code must use ClaimDueBattlesAsync for deadline polling.
-    /// TurnDeadlineWorker uses a tick loop with ClaimDueBattlesAsync and adaptive backoff.
-    /// </summary>
-    /// <remarks>
-    /// Do not use in runtime flow; deadlines are managed by state transitions + claim.
-    /// Kept for diagnostics/admin tooling only.
-    /// </remarks>
-    [Obsolete("Do not use in runtime flow; deadlines are managed by state transitions + claim. Use ClaimDueBattlesAsync for production deadline polling.")]
-    Task AddBattleDeadlineAsync(Guid battleId, DateTime deadlineUtc, CancellationToken cancellationToken = default);
-    
-    /// <summary>
-    /// Production code must use ClaimDueBattlesAsync for deadline polling.
-    /// TurnDeadlineWorker uses a tick loop with ClaimDueBattlesAsync and adaptive backoff.
-    /// </summary>
-    /// <remarks>
-    /// Do not use in runtime flow; deadlines are managed by state transitions + claim.
-    /// Kept for diagnostics/admin tooling only.
-    /// </remarks>
-    [Obsolete("Do not use in runtime flow; deadlines are managed by state transitions + claim. Use ClaimDueBattlesAsync for production deadline polling.")]
-    Task RemoveBattleDeadlineAsync(Guid battleId, CancellationToken cancellationToken = default);
-    
-    /// <summary>
-    /// Legacy method - not used by production worker.
-    /// Production code must use ClaimDueBattlesAsync for deadline polling.
-    /// TurnDeadlineWorker uses a tick loop with ClaimDueBattlesAsync and adaptive backoff.
-    /// </summary>
-    [Obsolete("Legacy method - not used by production worker. Use ClaimDueBattlesAsync for production deadline polling.")]
-    Task<List<Guid>> GetDueBattlesAsync(DateTime nowUtc, int limit, CancellationToken cancellationToken = default);
-    
-    /// <summary>
-    /// Gets the next upcoming deadline from the deadlines ZSET.
-    /// Returns null if there are no active deadlines.
-    /// 
-    /// WARNING: Unsafe due to double precision loss when Redis returns scores.
-    /// Redis ZSET scores are stored as doubles, and DateTime ticks (long) may lose precision when converted.
-    /// Production code must use ClaimDueBattlesAsync tick loop instead of peek/sleep patterns.
-    /// </summary>
-    [Obsolete("Unsafe due to double precision; do not use. Use ClaimDueBattlesAsync tick loop in TurnDeadlineWorker.")]
-    Task<DateTime?> GetNextDeadlineUtcAsync(CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Claims due battles from the deadlines ZSET atomically using Redis locks.
     /// For each due battle, attempts to acquire a lease lock for the specific battle turn.

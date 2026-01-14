@@ -61,7 +61,6 @@ public class MassTransitBattleEventPublisher : IBattleEventPublisher
             EndBattleReason.Timeout => BattleEndReason.Timeout,
             EndBattleReason.Cancelled => BattleEndReason.Cancelled,
             EndBattleReason.AdminForced => BattleEndReason.AdminForced,
-            EndBattleReason.SystemError => BattleEndReason.SystemError,
             _ => BattleEndReason.SystemError
         };
     }
