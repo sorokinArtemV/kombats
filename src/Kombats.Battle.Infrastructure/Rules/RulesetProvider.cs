@@ -25,13 +25,9 @@ public class RulesetProvider : IRulesetProvider
 
     public RulesetWithoutSeed GetCurrentRuleset(string? mode = null)
     {
-        if (_options.CurrentVersion <= 0)
-        {
-            throw new InvalidOperationException(
-                $"Battle:Rulesets:CurrentVersion must be greater than 0. Current value: {_options.CurrentVersion}");
-        }
-
-        return GetRulesetByVersion(_options.CurrentVersion);
+        return _options.CurrentVersion <= 0 
+            ? throw new InvalidOperationException($"Battle:Rulesets:CurrentVersion must be greater than 0. Current value: {_options.CurrentVersion}") 
+            : GetRulesetByVersion(_options.CurrentVersion);
     }
 
     public RulesetWithoutSeed GetRulesetByVersion(int version)
@@ -41,31 +37,27 @@ public class RulesetProvider : IRulesetProvider
             throw new ArgumentException("Version must be greater than 0", nameof(version));
         }
 
-        var versionKey = version.ToString();
+        string versionKey = version.ToString();
         if (!_options.Versions.TryGetValue(versionKey, out var versionConfig))
         {
             throw new ArgumentException(
                 $"Ruleset version {version} not found in configuration. Available versions: {string.Join(", ", _options.Versions.Keys)}",
                 nameof(version));
         }
-
-        // Validate version config
+        
         if (versionConfig.TurnSeconds <= 0)
         {
-            throw new InvalidOperationException(
-                $"Ruleset version {version} has invalid TurnSeconds: {versionConfig.TurnSeconds}. Must be greater than 0.");
+            throw new InvalidOperationException($"Ruleset version {version} has invalid TurnSeconds: {versionConfig.TurnSeconds}. Must be greater than 0.");
         }
 
         if (versionConfig.NoActionLimit <= 0)
         {
-            throw new InvalidOperationException(
-                $"Ruleset version {version} has invalid NoActionLimit: {versionConfig.NoActionLimit}. Must be greater than 0.");
+            throw new InvalidOperationException($"Ruleset version {version} has invalid NoActionLimit: {versionConfig.NoActionLimit}. Must be greater than 0.");
         }
 
         if (versionConfig.CombatBalance == null)
         {
-            throw new InvalidOperationException(
-                $"Ruleset version {version} has null CombatBalance configuration.");
+            throw new InvalidOperationException($"Ruleset version {version} has null CombatBalance configuration.");
         }
 
         // Map CombatBalanceVersionOptions to Domain CombatBalance
@@ -80,7 +72,7 @@ public class RulesetProvider : IRulesetProvider
 
     private static CombatBalance MapCombatBalance(CombatBalanceVersionOptions options)
     {
-        var critEffectMode = ParseCritEffectMode(options.CritEffect.Mode);
+        CritEffectMode critEffectMode = ParseCritEffectMode(options.CritEffect.Mode);
 
         return new CombatBalance(
             hp: new HpBalance(options.Hp.BaseHp, options.Hp.HpPerEnd),
