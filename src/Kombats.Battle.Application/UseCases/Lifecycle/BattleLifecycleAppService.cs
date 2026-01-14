@@ -59,9 +59,7 @@ public class BattleLifecycleAppService
         Guid playerBId,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation(
-            "Handling battle creation for BattleId: {BattleId}",
-            battleId);
+        _logger.LogInformation("Handling battle creation for BattleId: {BattleId}", battleId);
 
         // Get player profiles (stats) - treat missing profiles as non-retryable business error
         var profileA = await _profileProvider.GetProfileAsync(playerAId, cancellationToken);
@@ -91,8 +89,7 @@ public class BattleLifecycleAppService
                 battleId);
             return null;
         }
-
-        // Generate seed per battle (cryptographically safe)
+        
         var seed = _seedGenerator.GenerateSeed();
 
         // Build final domain Ruleset for this battle

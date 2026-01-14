@@ -150,8 +150,6 @@ builder.Services.AddMessaging<BattleDbContext>(
     {
         // Register entity name mappings (logical keys -> resolved from configuration)
         messagingBuilder.Map<CreateBattle>("CreateBattle");
-        // BattleCreated is published but not consumed internally (state initialization done directly in CreateBattleConsumer)
-        messagingBuilder.Map<BattleCreated>("BattleCreated");
         messagingBuilder.Map<EndBattle>("EndBattle");
         messagingBuilder.Map<BattleEnded>("BattleEnded");
     });

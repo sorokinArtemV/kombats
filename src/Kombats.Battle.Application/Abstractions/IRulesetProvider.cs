@@ -1,5 +1,3 @@
-using Kombats.Battle.Domain.Rules;
-
 namespace Kombats.Battle.Application.Abstractions;
 
 /// <summary>
@@ -23,13 +21,3 @@ public interface IRulesetProvider
     /// <exception cref="ArgumentException">If version is not found in configuration.</exception>
     RulesetWithoutSeed GetRulesetByVersion(int version);
 }
-
-/// <summary>
-/// Ruleset configuration without seed (seed is generated per battle).
-/// </summary>
-public record RulesetWithoutSeed(
-    int Version,
-    int TurnSeconds,
-    int NoActionLimit,
-    CombatBalance Balance);
-

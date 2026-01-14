@@ -27,7 +27,8 @@ public sealed class BattleEngine : IBattleEngine
             throw new InvalidOperationException($"Cannot resolve turn in phase {state.Phase}");
 
         if (state.TurnIndex != playerAAction.TurnIndex || state.TurnIndex != playerBAction.TurnIndex)
-            throw new ArgumentException($"Turn index mismatch: state={state.TurnIndex}, actions={playerAAction.TurnIndex}/{playerBAction.TurnIndex}");
+            throw new ArgumentException($"Turn index mismatch: state={state.TurnIndex}, " +
+                                        $"actions={playerAAction.TurnIndex}/{playerBAction.TurnIndex}");
 
         var events = new List<IDomainEvent>();
         var now = DateTime.UtcNow;
