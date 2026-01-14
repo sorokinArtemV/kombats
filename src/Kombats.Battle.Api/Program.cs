@@ -18,6 +18,8 @@ using Kombats.Battle.Infrastructure.Time;
 
 using Kombats.Contracts.Battle;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
+using Serilog.Events;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -29,6 +31,15 @@ builder.Services.AddCors(options =>
             .AllowAnyOrigin()
             .AllowAnyHeader()
             .AllowAnyMethod());
+});
+
+builder.Host.UseSerilog((context, services, loggerConfiguration) =>
+{
+    loggerConfiguration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        
+        .Enrich.FromLogContext() ;
 });
 
 // Add services to the container
@@ -151,6 +162,26 @@ builder.Services.AddHostedService<TurnDeadlineWorker>();
 var app = builder.Build();
 
 app.UseRouting();
+
+app.UseSerilogRequestLogging(options =>
+{
+    options.GetLevel = (httpContext, _, ex) =>
+    {
+        if (ex != null) return LogEventLevel.Error;
+        var statusCode = httpContext.Response.StatusCode;
+        return statusCode >= 500 ? LogEventLevel.Error
+            : statusCode >= 400 ? LogEventLevel.Warning
+            : LogEventLevel.Information;
+    };
+
+    // Что добавлять в event
+    options.EnrichDiagnosticContext = (diagContext, httpContext) =>
+    {
+        diagContext.Set("ClientIP", httpContext.Connection.RemoteIpAddress?.ToString());
+        diagContext.Set("UserAgent", httpContext.Request.Headers.UserAgent.ToString());
+        diagContext.Set("TraceId", httpContext.TraceIdentifier);
+    };
+});
 
 app.UseCors("AllowAll");
 
