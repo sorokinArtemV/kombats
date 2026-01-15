@@ -120,15 +120,11 @@ public class BattleLifecycleAppService
             await _notifier.NotifyBattleReadyAsync(battleId, playerAId, playerBId, cancellationToken);
             await _notifier.NotifyTurnOpenedAsync(battleId, 1, turn1Deadline, cancellationToken);
 
-            _logger.LogInformation(
-                "Battle {BattleId} initialized and Turn 1 opened. RulesetVersion: {RulesetVersion}, Seed: {Seed}, Deadline: {DeadlineUtc}",
-                battleId, domainRuleset.Version, seed, turn1Deadline);
+            _logger.LogInformation("Battle {BattleId} initialized and Turn 1 opened. RulesetVersion: {RulesetVersion}, Seed: {Seed}, Deadline: {DeadlineUtc}", battleId, domainRuleset.Version, seed, turn1Deadline);
         }
         else
         {
-            _logger.LogInformation(
-                "Battle {BattleId} already has Turn 1 open or is in a different state (converged, no notification sent)",
-                battleId);
+            _logger.LogInformation("Battle {BattleId} already has Turn 1 open or is in a different state (converged, no notification sent)", battleId);
         }
 
         return new BattleInitializationResult

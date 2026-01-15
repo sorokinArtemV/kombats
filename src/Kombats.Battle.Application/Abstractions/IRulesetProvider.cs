@@ -21,3 +21,4 @@ public interface IRulesetProvider
     /// <exception cref="ArgumentException">If version is not found in configuration.</exception>
     RulesetWithoutSeed GetRulesetByVersion(int version);
 }
+

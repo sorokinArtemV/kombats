@@ -7,33 +7,27 @@ namespace Kombats.Battle.Domain.Engine;
 
 /// <summary>
 /// Battle engine implementation - pure domain logic for resolving turns in fistfight combat.
-/// This is a pure function with no infrastructure dependencies.
+/// Battle outcome is deterministic: same seed + state + actions => same results (damage, crit, dodge, outcomes).
 /// </summary>
 public sealed class BattleEngine : IBattleEngine
 {
-    private readonly IRandomProvider _rng;
-
-    public BattleEngine(IRandomProvider rng)
-    {
-        _rng = rng ?? throw new ArgumentNullException(nameof(rng));
-    }
-
     public BattleResolutionResult ResolveTurn(
         BattleDomainState state,
         PlayerAction playerAAction,
         PlayerAction playerBAction)
     {
         if (state.Phase != BattlePhase.Resolving)
+        {
             throw new InvalidOperationException($"Cannot resolve turn in phase {state.Phase}");
+        }
 
         if (state.TurnIndex != playerAAction.TurnIndex || state.TurnIndex != playerBAction.TurnIndex)
-            throw new ArgumentException($"Turn index mismatch: state={state.TurnIndex}, " +
-                                        $"actions={playerAAction.TurnIndex}/{playerBAction.TurnIndex}");
+        {
+            throw new ArgumentException($"Turn index mismatch: state={state.TurnIndex}, actions={playerAAction.TurnIndex}/{playerBAction.TurnIndex}");}
 
         var events = new List<IDomainEvent>();
         var now = DateTime.UtcNow;
-
-        // Create mutable copies of player states
+        
         var playerA = new PlayerState(
             state.PlayerA.PlayerId,
             state.PlayerA.MaxHp,
@@ -46,112 +40,27 @@ public sealed class BattleEngine : IBattleEngine
             state.PlayerB.Stats);
 
         // Normalize actions: validate and convert invalid to NoAction
-        var normalizedActionA = NormalizeAction(playerAAction);
-        var normalizedActionB = NormalizeAction(playerBAction);
+        var (normalizedActionA, normalizedActionB) = NormalizeActions(playerAAction, playerBAction);
 
         // Check for DoubleForfeit: both players NoAction
-        if (normalizedActionA.IsNoAction && normalizedActionB.IsNoAction)
+        var doubleForfeitResult = TryResolveDoubleForfeit(
+            state, normalizedActionA, 
+            normalizedActionB, 
+            playerA, 
+            playerB, 
+            now);
+        
+        if (doubleForfeitResult != null)
         {
-            var newStreak = state.NoActionStreakBoth + 1;
-
-            if (newStreak >= state.Ruleset.NoActionLimit)
-            {
-                // Battle ends due to DoubleForfeit
-                var endedState = new BattleDomainState(
-                    state.BattleId,
-                    state.MatchId,
-                    state.PlayerAId,
-                    state.PlayerBId,
-                    state.Ruleset,
-                    BattlePhase.Ended,
-                    state.TurnIndex,
-                    newStreak,
-                    state.TurnIndex,
-                    playerA,
-                    playerB);
-
-                endedState.EndBattle();
-
-                events.Add(new BattleEndedDomainEvent(
-                    state.BattleId,
-                    WinnerPlayerId: null,
-                    EndBattleReason.DoubleForfeit,
-                    state.TurnIndex,
-                    now));
-
-                return new BattleResolutionResult
-                {
-                    NewState = endedState,
-                    Events = events
-                };
-            }
-
-            // Streak increased but battle continues
-            var continuingState = new BattleDomainState(
-                state.BattleId,
-                state.MatchId,
-                state.PlayerAId,
-                state.PlayerBId,
-                state.Ruleset,
-                BattlePhase.Resolving,
-                state.TurnIndex,
-                newStreak,
-                state.LastResolvedTurnIndex,
-                playerA,
-                playerB);
-
-            continuingState.UpdateNoActionStreak(newStreak);
-
-            // Create turn resolution log for DoubleForfeit (both NoAction)
-            var doubleForfeitLog = new TurnResolutionLog
-            {
-                BattleId = state.BattleId,
-                TurnIndex = state.TurnIndex,
-                AtoB = new AttackResolution
-                {
-                    AttackerId = state.PlayerAId,
-                    DefenderId = state.PlayerBId,
-                    TurnIndex = state.TurnIndex,
-                    AttackZone = null,
-                    DefenderBlockPrimary = null,
-                    DefenderBlockSecondary = null,
-                    WasBlocked = false,
-                    WasCrit = false,
-                    Outcome = AttackOutcome.NoAction,
-                    Damage = 0
-                },
-                BtoA = new AttackResolution
-                {
-                    AttackerId = state.PlayerBId,
-                    DefenderId = state.PlayerAId,
-                    TurnIndex = state.TurnIndex,
-                    AttackZone = null,
-                    DefenderBlockPrimary = null,
-                    DefenderBlockSecondary = null,
-                    WasBlocked = false,
-                    WasCrit = false,
-                    Outcome = AttackOutcome.NoAction,
-                    Damage = 0
-                }
-            };
-
-            events.Add(new TurnResolvedDomainEvent(
-                state.BattleId,
-                state.TurnIndex,
-                normalizedActionA,
-                normalizedActionB,
-                doubleForfeitLog,
-                now));
-
-            return new BattleResolutionResult
-            {
-                NewState = continuingState,
-                Events = events
-            };
+            return doubleForfeitResult;
         }
 
         // Reset streak if at least one player acted
         var resetStreak = 0;
+
+        // Create deterministic RNG instances for this turn
+        // This ensures order independence: A->B and B->A use separate RNG streams
+        var (rngAtoB, rngBtoA) = DeterministicTurnRng.Create(state);
 
         // Resolve attacks simultaneously (order must not matter)
         // Attack from A to B
@@ -163,7 +72,8 @@ public sealed class BattleEngine : IBattleEngine
             state.PlayerAId,
             state.PlayerBId,
             state.TurnIndex,
-            state.Ruleset);
+            state.Ruleset,
+            rngAtoB);
 
         // Attack from B to A
         var resolutionBtoA = ResolveAttack(
@@ -174,32 +84,11 @@ public sealed class BattleEngine : IBattleEngine
             state.PlayerBId,
             state.PlayerAId,
             state.TurnIndex,
-            state.Ruleset);
+            state.Ruleset,
+            rngBtoA);
 
-        // Apply damage to starting HP of the turn (simultaneous)
-        if (resolutionAtoB.Damage > 0 && playerB.IsAlive)
-        {
-            playerB.ApplyDamage(resolutionAtoB.Damage);
-            events.Add(new PlayerDamagedDomainEvent(
-                state.BattleId,
-                state.PlayerBId,
-                resolutionAtoB.Damage,
-                playerB.CurrentHp,
-                state.TurnIndex,
-                now));
-        }
-
-        if (resolutionBtoA.Damage > 0 && playerA.IsAlive)
-        {
-            playerA.ApplyDamage(resolutionBtoA.Damage);
-            events.Add(new PlayerDamagedDomainEvent(
-                state.BattleId,
-                state.PlayerAId,
-                resolutionBtoA.Damage,
-                playerA.CurrentHp,
-                state.TurnIndex,
-                now));
-        }
+        // Apply damage and create events
+        ApplySimultaneousDamageAndEvents(state, resolutionAtoB, resolutionBtoA, playerA, playerB, now, events);
 
         // Create turn resolution log
         var turnLog = new TurnResolutionLog
@@ -211,25 +100,7 @@ public sealed class BattleEngine : IBattleEngine
         };
 
         // Check for battle end due to player death
-        var winnerId = (Guid?)null;
-        var endReason = EndBattleReason.Normal;
-
-        if (playerA.IsDead && playerB.IsDead)
-        {
-            // Both dead - draw
-            endReason = EndBattleReason.Normal; // Could be a separate "Draw" reason
-            winnerId = null;
-        }
-        else if (playerA.IsDead)
-        {
-            winnerId = state.PlayerBId;
-            endReason = EndBattleReason.Normal;
-        }
-        else if (playerB.IsDead)
-        {
-            winnerId = state.PlayerAId;
-            endReason = EndBattleReason.Normal;
-        }
+        var (winnerId, endReason) = DetermineBattleEnd(playerA, playerB, state);
 
         // Create new state
         BattleDomainState newState;
@@ -290,6 +161,195 @@ public sealed class BattleEngine : IBattleEngine
             NewState = newState,
             Events = events
         };
+    }
+
+    /// <summary>
+    /// Normalizes both player actions: validates and converts invalid to NoAction.
+    /// </summary>
+    private static (PlayerAction normalizedA, PlayerAction normalizedB) NormalizeActions(
+        PlayerAction actionA,
+        PlayerAction actionB)
+    {
+        return (NormalizeAction(actionA), NormalizeAction(actionB));
+    }
+
+    /// <summary>
+    /// Attempts to resolve double forfeit (both players NoAction).
+    /// Returns resolution result if double forfeit occurred, null otherwise.
+    /// </summary>
+    private static BattleResolutionResult? TryResolveDoubleForfeit(
+        BattleDomainState state,
+        PlayerAction normalizedActionA,
+        PlayerAction normalizedActionB,
+        PlayerState playerA,
+        PlayerState playerB,
+        DateTime now)
+    {
+        if (!normalizedActionA.IsNoAction || !normalizedActionB.IsNoAction)
+            return null;
+
+        var newStreak = state.NoActionStreakBoth + 1;
+
+        if (newStreak >= state.Ruleset.NoActionLimit)
+        {
+            // Battle ends due to DoubleForfeit
+            var endedState = new BattleDomainState(
+                state.BattleId,
+                state.MatchId,
+                state.PlayerAId,
+                state.PlayerBId,
+                state.Ruleset,
+                BattlePhase.Ended,
+                state.TurnIndex,
+                newStreak,
+                state.TurnIndex,
+                playerA,
+                playerB);
+
+            endedState.EndBattle();
+
+            return new BattleResolutionResult
+            {
+                NewState = endedState,
+                Events = new List<IDomainEvent>
+                {
+                    new BattleEndedDomainEvent(
+                        state.BattleId,
+                        WinnerPlayerId: null,
+                        EndBattleReason.DoubleForfeit,
+                        state.TurnIndex,
+                        now)
+                }
+            };
+        }
+
+        // Streak increased but battle continues
+        var continuingState = new BattleDomainState(
+            state.BattleId,
+            state.MatchId,
+            state.PlayerAId,
+            state.PlayerBId,
+            state.Ruleset,
+            BattlePhase.Resolving,
+            state.TurnIndex,
+            newStreak,
+            state.LastResolvedTurnIndex,
+            playerA,
+            playerB);
+
+        continuingState.UpdateNoActionStreak(newStreak);
+
+        // Create turn resolution log for DoubleForfeit (both NoAction)
+        var doubleForfeitLog = new TurnResolutionLog
+        {
+            BattleId = state.BattleId,
+            TurnIndex = state.TurnIndex,
+            AtoB = new AttackResolution
+            {
+                AttackerId = state.PlayerAId,
+                DefenderId = state.PlayerBId,
+                TurnIndex = state.TurnIndex,
+                AttackZone = null,
+                DefenderBlockPrimary = null,
+                DefenderBlockSecondary = null,
+                WasBlocked = false,
+                WasCrit = false,
+                Outcome = AttackOutcome.NoAction,
+                Damage = 0
+            },
+            BtoA = new AttackResolution
+            {
+                AttackerId = state.PlayerBId,
+                DefenderId = state.PlayerAId,
+                TurnIndex = state.TurnIndex,
+                AttackZone = null,
+                DefenderBlockPrimary = null,
+                DefenderBlockSecondary = null,
+                WasBlocked = false,
+                WasCrit = false,
+                Outcome = AttackOutcome.NoAction,
+                Damage = 0
+            }
+        };
+
+        return new BattleResolutionResult
+        {
+            NewState = continuingState,
+            Events = new List<IDomainEvent>
+            {
+                new TurnResolvedDomainEvent(
+                    state.BattleId,
+                    state.TurnIndex,
+                    normalizedActionA,
+                    normalizedActionB,
+                    doubleForfeitLog,
+                    now)
+            }
+        };
+    }
+
+    /// <summary>
+    /// Applies simultaneous damage to both players and creates damage events.
+    /// Adds events to the provided list (does not create a new list).
+    /// </summary>
+    private static void ApplySimultaneousDamageAndEvents(
+        BattleDomainState state,
+        AttackResolution resolutionAtoB,
+        AttackResolution resolutionBtoA,
+        PlayerState playerA,
+        PlayerState playerB,
+        DateTime now,
+        List<IDomainEvent> events)
+    {
+        // Apply damage to starting HP of the turn (simultaneous)
+        if (resolutionAtoB.Damage > 0 && playerB.IsAlive)
+        {
+            playerB.ApplyDamage(resolutionAtoB.Damage);
+            events.Add(new PlayerDamagedDomainEvent(
+                state.BattleId,
+                state.PlayerBId,
+                resolutionAtoB.Damage,
+                playerB.CurrentHp,
+                state.TurnIndex,
+                now));
+        }
+
+        if (resolutionBtoA.Damage > 0 && playerA.IsAlive)
+        {
+            playerA.ApplyDamage(resolutionBtoA.Damage);
+            events.Add(new PlayerDamagedDomainEvent(
+                state.BattleId,
+                state.PlayerAId,
+                resolutionBtoA.Damage,
+                playerA.CurrentHp,
+                state.TurnIndex,
+                now));
+        }
+    }
+
+    /// <summary>
+    /// Determines if battle should end and returns winner ID and end reason.
+    /// </summary>
+    private static (Guid? winnerId, EndBattleReason endReason) DetermineBattleEnd(
+        PlayerState playerA,
+        PlayerState playerB,
+        BattleDomainState state)
+    {
+        if (playerA.IsDead && playerB.IsDead)
+        {
+            // Both dead - draw
+            return (null, EndBattleReason.Normal);
+        }
+        else if (playerA.IsDead)
+        {
+            return (state.PlayerBId, EndBattleReason.Normal);
+        }
+        else if (playerB.IsDead)
+        {
+            return (state.PlayerAId, EndBattleReason.Normal);
+        }
+
+        return (null, EndBattleReason.Normal);
     }
 
     /// <summary>
@@ -356,7 +416,8 @@ public sealed class BattleEngine : IBattleEngine
         Guid attackerId,
         Guid defenderId,
         int turnIndex,
-        Ruleset ruleset)
+        Ruleset ruleset,
+        IRandomProvider rng)
     {
         // 1. If NoAction -> Outcome = NoAction, Damage = 0
         if (attackerAction.IsNoAction || attackerAction.AttackZone == null)
@@ -388,7 +449,7 @@ public sealed class BattleEngine : IBattleEngine
             defenderAction.BlockZoneSecondary);
 
         // 3. Roll Dodge FIRST (hit/miss)
-        var isDodged = RollDodge(derivedAtt, derivedDef, ruleset.Balance);
+        var isDodged = RollDodge(derivedAtt, derivedDef, ruleset.Balance, rng);
         if (isDodged)
         {
             return BuildResolution(
@@ -407,7 +468,7 @@ public sealed class BattleEngine : IBattleEngine
         // 4. If hit, then evaluate Block mitigation
 
         // Roll Crit
-        var isCrit = RollCrit(derivedAtt, derivedDef, ruleset.Balance);
+        var isCrit = RollCrit(derivedAtt, derivedDef, ruleset.Balance, rng);
 
         // Determine if block is bypassed or hybridized
         var isBlockBypassed = zoneMatched && isCrit && ruleset.Balance.CritEffect.Mode == CritEffectMode.BypassBlock;
@@ -432,7 +493,7 @@ public sealed class BattleEngine : IBattleEngine
 
         // 5. If not blocked (zoneMatched==false) OR block was bypassed/hybridized:
         // Roll base damage
-        decimal baseDamage = CombatMath.RollDamage(_rng, derivedAtt);
+        decimal baseDamage = CombatMath.RollDamage(rng, derivedAtt);
 
         // Apply crit multiplier if crit occurred
         decimal finalDamage = baseDamage;
@@ -539,13 +600,14 @@ public sealed class BattleEngine : IBattleEngine
     /// <summary>
     /// Rolls crit chance and returns whether crit occurred.
     /// </summary>
-    private bool RollCrit(
+    private static bool RollCrit(
         DerivedCombatStats attackerDerived,
         DerivedCombatStats defenderDerived,
-        CombatBalance balance)
+        CombatBalance balance,
+        IRandomProvider rng)
     {
         var critChance = CombatMath.ComputeCritChance(attackerDerived, defenderDerived, balance);
-        var critRoll = _rng.NextDecimal(0, 1);
+        var critRoll = rng.NextDecimal(0, 1);
         return critRoll < critChance;
     }
 
@@ -553,15 +615,17 @@ public sealed class BattleEngine : IBattleEngine
     /// Rolls dodge chance and returns whether dodge occurred.
     /// Returns true if dodged, false if not.
     /// </summary>
-    private bool RollDodge(
+    private static bool RollDodge(
         DerivedCombatStats attackerDerived,
         DerivedCombatStats defenderDerived,
-        CombatBalance balance)
+        CombatBalance balance,
+        IRandomProvider rng)
     {
         var dodgeChance = CombatMath.ComputeDodgeChance(attackerDerived, defenderDerived, balance);
-        var dodgeRoll = _rng.NextDecimal(0, 1);
+        var dodgeRoll = rng.NextDecimal(0, 1);
         return dodgeRoll < dodgeChance;
     }
+
 }
 
 
