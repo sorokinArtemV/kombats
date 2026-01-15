@@ -12,7 +12,7 @@ public sealed record TurnResolvedDomainEvent(
     PlayerAction PlayerAAction,
     PlayerAction PlayerBAction,
     TurnResolutionLog Log,
-    DateTime OccurredAt) : IDomainEvent;
+    DateTimeOffset OccurredAt) : IDomainEvent;
 
 /// <summary>
 /// Domain event: A player has taken damage.
@@ -23,7 +23,7 @@ public sealed record PlayerDamagedDomainEvent(
     int Damage,
     int RemainingHp,
     int TurnIndex,
-    DateTime OccurredAt) : IDomainEvent;
+    DateTimeOffset OccurredAt) : IDomainEvent;
 
 /// <summary>
 /// Domain event: The battle has ended.
@@ -33,6 +33,6 @@ public sealed record BattleEndedDomainEvent(
     Guid? WinnerPlayerId,
     EndBattleReason Reason,
     int FinalTurnIndex,
-    DateTime OccurredAt) : IDomainEvent;
+    DateTimeOffset OccurredAt) : IDomainEvent;
 
 

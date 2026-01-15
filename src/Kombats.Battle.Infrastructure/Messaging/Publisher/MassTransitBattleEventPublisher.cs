@@ -29,7 +29,7 @@ public class MassTransitBattleEventPublisher : IBattleEventPublisher
         Guid matchId,
         EndBattleReason reason,
         Guid? winnerPlayerId,
-        DateTime endedAt,
+        DateTimeOffset endedAt,
         CancellationToken cancellationToken = default)
     {
         // Map domain EndBattleReason to Contracts BattleEndReason
@@ -65,5 +65,3 @@ public class MassTransitBattleEventPublisher : IBattleEventPublisher
         };
     }
 }
-
-

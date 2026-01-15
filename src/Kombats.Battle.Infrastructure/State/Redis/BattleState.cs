@@ -52,23 +52,7 @@ public class BattleState
     public int? PlayerBStamina { get; set; }
     public int? PlayerBAgility { get; set; }
     public int? PlayerBIntuition { get; set; }
-
-    // Helper methods for DateTime conversion
-    /// <summary>
-    /// Converts DeadlineUnixMs to DateTime (UTC).
-    /// </summary>
-    public DateTime GetDeadlineUtc() => DateTimeOffset.FromUnixTimeMilliseconds(DeadlineUnixMs).UtcDateTime;
-    
-    /// <summary>
-    /// Sets DeadlineUnixMs from DateTime (UTC).
-    /// </summary>
-    public void SetDeadlineUtc(DateTime deadlineUtc)
-    {
-        var deadlineOffset = new DateTimeOffset(deadlineUtc.ToUniversalTime(), TimeSpan.Zero);
-        DeadlineUnixMs = deadlineOffset.ToUnixTimeMilliseconds();
-    }
 }
 
-// BattlePhase is now defined in Domain.Model.BattlePhase
 
 

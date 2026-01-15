@@ -11,26 +11,42 @@ namespace Kombats.Battle.Application.Abstractions;
 /// </summary>
 public interface IBattleStateStore
 {
-    Task<bool> TryInitializeBattleAsync(Guid battleId, BattleDomainState initialState, CancellationToken cancellationToken = default);
-    Task<BattleSnapshot?> GetStateAsync(Guid battleId, CancellationToken cancellationToken = default);
-    Task<bool> TryOpenTurnAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default);
-    Task<bool> TryMarkTurnResolvingAsync(Guid battleId, int turnIndex, CancellationToken cancellationToken = default);
-    Task<bool> MarkTurnResolvedAndOpenNextAsync(
+    Task<bool> TryInitializeBattleAsync(
         Guid battleId, 
-        int currentTurnIndex, 
-        int nextTurnIndex, 
-        DateTime nextDeadlineUtc, 
-        int noActionStreak,
-        int playerAHp,
-        int playerBHp,
+        BattleDomainState initialState,
         CancellationToken cancellationToken = default);
-    Task<EndBattleCommitResult> EndBattleAndMarkResolvedAsync(
+
+    Task<BattleSnapshot?> GetStateAsync(Guid battleId, CancellationToken cancellationToken = default);
+
+    Task<bool> TryOpenTurnAsync(
         Guid battleId, 
         int turnIndex, 
+        DateTimeOffset deadlineUtc, 
+        CancellationToken cancellationToken = default);
+
+    Task<bool> TryMarkTurnResolvingAsync(
+        Guid battleId, 
+        int turnIndex, 
+        CancellationToken cancellationToken = default);
+
+    Task<bool> MarkTurnResolvedAndOpenNextAsync(
+        Guid battleId,
+        int currentTurnIndex,
+        int nextTurnIndex,
+        DateTimeOffset nextDeadlineUtc,
         int noActionStreak,
         int playerAHp,
         int playerBHp,
         CancellationToken cancellationToken = default);
+
+    Task<EndBattleCommitResult> EndBattleAndMarkResolvedAsync(
+        Guid battleId,
+        int turnIndex,
+        int noActionStreak,
+        int playerAHp,
+        int playerBHp,
+        CancellationToken cancellationToken = default);
+
     Task<List<Guid>> GetActiveBattlesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -45,11 +61,23 @@ public interface IBattleStateStore
     /// <param name="leaseTtl">Time-to-live for the claim lock (should be long enough to complete resolution)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>List of claimed battles with their turn indexes</returns>
-    Task<IReadOnlyList<ClaimedBattleDue>> ClaimDueBattlesAsync(DateTime nowUtc, int limit, TimeSpan leaseTtl, CancellationToken cancellationToken = default);
-    Task<ActionStoreResult> StoreActionAsync(Guid battleId, int turnIndex, Guid playerId, string actionPayload, CancellationToken cancellationToken = default);
-    Task<(string? PlayerAAction, string? PlayerBAction)> GetActionsAsync(Guid battleId, int turnIndex, Guid playerAId, Guid playerBId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ClaimedBattleDue>> ClaimDueBattlesAsync(
+        DateTimeOffset nowUtc, 
+        int limit, 
+        TimeSpan leaseTtl,
+        CancellationToken cancellationToken = default);
+
+    Task<ActionStoreResult> StoreActionAsync(
+        Guid battleId, 
+        int turnIndex, 
+        Guid playerId, 
+        string actionPayload,
+        CancellationToken cancellationToken = default);
+
+    Task<(string? PlayerAAction, string? PlayerBAction)> GetActionsAsync(
+        Guid battleId, 
+        int turnIndex, 
+        Guid playerAId,
+        Guid playerBId, 
+        CancellationToken cancellationToken = default);
 }
-
-
-
-

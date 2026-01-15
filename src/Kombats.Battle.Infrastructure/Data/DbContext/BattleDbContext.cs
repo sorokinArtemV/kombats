@@ -1,8 +1,8 @@
-using Kombats.Battle.Infrastructure.Persistence.EF.Entities;
+using Kombats.Battle.Infrastructure.Data.Entities;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 
-namespace Kombats.Battle.Infrastructure.Persistence.EF.DbContext;
+namespace Kombats.Battle.Infrastructure.Data.DbContext;
 
 public class BattleDbContext : Microsoft.EntityFrameworkCore.DbContext
 {
@@ -43,10 +43,9 @@ public class BattleDbContext : Microsoft.EntityFrameworkCore.DbContext
             entity.Property(e => e.UpdatedAt).IsRequired();
             entity.Property(e => e.Version).IsRequired();
         });
-        
-        modelBuilder.AddInboxStateEntity();      // InboxState
-        modelBuilder.AddOutboxMessageEntity();   // OutboxMessage
-        modelBuilder.AddOutboxStateEntity();     // OutboxState
+
+        modelBuilder.AddInboxStateEntity(); 
+        modelBuilder.AddOutboxMessageEntity();
+        modelBuilder.AddOutboxStateEntity();
     }
 }
-

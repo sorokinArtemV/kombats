@@ -12,13 +12,13 @@ public sealed class BattleDomainState
     public Guid MatchId { get; init; }
     public Guid PlayerAId { get; init; }
     public Guid PlayerBId { get; init; }
-    public Ruleset Ruleset { get; init; } 
+    public Ruleset Ruleset { get; init; }
     public BattlePhase Phase { get; private set; }
     public int TurnIndex { get; private set; }
     public int NoActionStreakBoth { get; private set; }
     public int LastResolvedTurnIndex { get; private set; }
-    public PlayerState PlayerA { get; private set; } 
-    public PlayerState PlayerB { get; private set; } 
+    public PlayerState PlayerA { get; private set; }
+    public PlayerState PlayerB { get; private set; }
 
     public BattleDomainState(
         Guid battleId,
@@ -45,17 +45,7 @@ public sealed class BattleDomainState
         PlayerA = playerA;
         PlayerB = playerB;
     }
-
-    public void AdvanceToNextTurn(int nextTurnIndex)
-    {
-        if (Phase != BattlePhase.Resolving)
-            throw new InvalidOperationException($"Cannot advance turn from phase {Phase}");
-
-        Phase = BattlePhase.TurnOpen;
-        TurnIndex = nextTurnIndex;
-        LastResolvedTurnIndex = TurnIndex - 1;
-    }
-
+    
     public void EndBattle()
     {
         Phase = BattlePhase.Ended;
@@ -65,35 +55,4 @@ public sealed class BattleDomainState
     {
         NoActionStreakBoth = streak;
     }
-
-    public PlayerState GetPlayerState(Guid playerId)
-    {
-        if (playerId == PlayerAId)
-            return PlayerA;
-        if (playerId == PlayerBId)
-            return PlayerB;
-        throw new ArgumentException($"Player {playerId} is not a participant in battle {BattleId}", nameof(playerId));
-    }
-
-    public PlayerState GetOpponentState(Guid playerId)
-    {
-        if (playerId == PlayerAId)
-            return PlayerB;
-        if (playerId == PlayerBId)
-            return PlayerA;
-        throw new ArgumentException($"Player {playerId} is not a participant in battle {BattleId}", nameof(playerId));
-    }
 }
-
-/// <summary>
-/// Battle phase enum (domain-level, matches infrastructure enum).
-/// </summary>
-public enum BattlePhase
-{
-    ArenaOpen = 0,
-    TurnOpen = 1,
-    Resolving = 2,
-    Ended = 3
-}
-
-

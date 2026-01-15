@@ -47,7 +47,7 @@ public class RedisBattleStateStore : IBattleStateStore
     /// <summary>
     /// Helper method for unix milliseconds conversion (ZSET scores and state JSON use unixMs for consistency)
     /// </summary>
-    private static long ToUnixMs(DateTime utc) => new DateTimeOffset(utc, TimeSpan.Zero).ToUnixTimeMilliseconds();
+    private static long ToUnixMs(DateTimeOffset value) => value.ToUnixTimeMilliseconds();
     private string GetStateKey(Guid battleId) => $"{StateKeyPrefix}{battleId}";
     private string GetActionKey(Guid battleId, int turnIndex, Guid playerId) => $"{ActionKeyPrefix}{battleId}:turn:{turnIndex}:player:{playerId}";
     private string GetLockKey(Guid battleId, int turnIndex) => $"lock:battle:{battleId}:turn:{turnIndex}";
@@ -61,7 +61,7 @@ public class RedisBattleStateStore : IBattleStateStore
         string key = GetStateKey(battleId);
 
         // Convert Domain state to Infrastructure storage model
-        DateTime deadlineUtc = _clock.UtcNow; // ArenaOpen deadline is meaningless but consistent
+        DateTimeOffset deadlineUtc = _clock.UtcNow; // ArenaOpen deadline is meaningless but consistent
         BattleState state = StoredStateMapper.FromDomainState(initialState, deadlineUtc, version: 1);
 
         // Use SETNX for idempotent initialization
@@ -108,7 +108,7 @@ public class RedisBattleStateStore : IBattleStateStore
         }
     }
 
-    public async Task<bool> TryOpenTurnAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default)
+    public async Task<bool> TryOpenTurnAsync(Guid battleId, int turnIndex, DateTimeOffset deadlineUtc, CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
         var key = GetStateKey(battleId);
@@ -157,7 +157,7 @@ public class RedisBattleStateStore : IBattleStateStore
         Guid battleId,
         int currentTurnIndex,
         int nextTurnIndex,
-        DateTime nextDeadlineUtc,
+        DateTimeOffset nextDeadlineUtc,
         int noActionStreak,
         int playerAHp,
         int playerBHp,
@@ -229,7 +229,7 @@ public class RedisBattleStateStore : IBattleStateStore
     }
     
     public async Task<IReadOnlyList<ClaimedBattleDue>> ClaimDueBattlesAsync(
-        DateTime nowUtc, 
+        DateTimeOffset nowUtc, 
         int limit, 
         TimeSpan leaseTtl, 
         CancellationToken cancellationToken = default)

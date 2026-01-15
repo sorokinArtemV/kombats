@@ -16,7 +16,7 @@ public sealed class BattleSnapshot
     public Ruleset Ruleset { get; init; } = null!;
     public BattlePhase Phase { get; init; }
     public int TurnIndex { get; init; }
-    public DateTime DeadlineUtc { get; init; }
+    public DateTimeOffset DeadlineUtc { get; init; }
     public int NoActionStreakBoth { get; init; }
     public int LastResolvedTurnIndex { get; init; }
     public int Version { get; init; }

@@ -10,7 +10,7 @@ public record CreateBattle
     public Guid MatchId { get; init; }
     public Guid PlayerAId { get; init; }
     public Guid PlayerBId { get; init; }
-    public DateTime RequestedAt { get; init; }
+    public DateTimeOffset RequestedAt { get; init; }
 }
 
 

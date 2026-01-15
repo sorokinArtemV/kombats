@@ -23,22 +23,14 @@ public sealed record DerivedCombatStats
         int mfCrit,
         int mfAntiCrit)
     {
-        if (hpMax < 0)
-            throw new ArgumentException("HpMax cannot be negative", nameof(hpMax));
-        if (damageMin < 0)
-            throw new ArgumentException("DamageMin cannot be negative", nameof(damageMin));
-        if (damageMax < 0)
-            throw new ArgumentException("DamageMax cannot be negative", nameof(damageMax));
-        if (damageMin > damageMax)
-            throw new ArgumentException("DamageMin must be less than or equal to DamageMax", nameof(damageMin));
-        if (mfDodge < 0)
-            throw new ArgumentException("MfDodge cannot be negative", nameof(mfDodge));
-        if (mfAntiDodge < 0)
-            throw new ArgumentException("MfAntiDodge cannot be negative", nameof(mfAntiDodge));
-        if (mfCrit < 0)
-            throw new ArgumentException("MfCrit cannot be negative", nameof(mfCrit));
-        if (mfAntiCrit < 0)
-            throw new ArgumentException("MfAntiCrit cannot be negative", nameof(mfAntiCrit));
+        if (hpMax < 0) throw new ArgumentException("HpMax cannot be negative", nameof(hpMax));
+        if (damageMin < 0) throw new ArgumentException("DamageMin cannot be negative", nameof(damageMin));
+        if (damageMax < 0) throw new ArgumentException("DamageMax cannot be negative", nameof(damageMax));
+        if (damageMin > damageMax) throw new ArgumentException("DamageMin must be less than or equal to DamageMax", nameof(damageMin));
+        if (mfDodge < 0) throw new ArgumentException("MfDodge cannot be negative", nameof(mfDodge));
+        if (mfAntiDodge < 0) throw new ArgumentException("MfAntiDodge cannot be negative", nameof(mfAntiDodge));
+        if (mfCrit < 0) throw new ArgumentException("MfCrit cannot be negative", nameof(mfCrit));
+        if (mfAntiCrit < 0) throw new ArgumentException("MfAntiCrit cannot be negative", nameof(mfAntiCrit));
 
         HpMax = hpMax;
         DamageMin = damageMin;

@@ -60,16 +60,18 @@ public class BattleLifecycleAppService
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Handling battle creation for BattleId: {BattleId}", battleId);
-        
+
         var profileA = await _profileProvider.GetProfileAsync(playerAId, cancellationToken);
         var profileB = await _profileProvider.GetProfileAsync(playerBId, cancellationToken);
-        
+
         if (profileA == null || profileB == null)
         {
-            _logger.LogError("Player profile not found for BattleId: {BattleId}, PlayerAId: {PlayerAId}, PlayerBId: {PlayerBId}. " + "ACKing message to avoid infinite retries.", battleId, playerAId, playerBId);
+            _logger.LogError(
+                "Player profile not found for BattleId: {BattleId}, PlayerAId: {PlayerAId}, PlayerBId: {PlayerBId}. " +
+                "ACKing message to avoid infinite retries.", battleId, playerAId, playerBId);
             return null;
         }
-        
+
         RulesetWithoutSeed rulesetWithoutSeed;
         try
         {
@@ -77,18 +79,20 @@ public class BattleLifecycleAppService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get current ruleset for BattleId: {BattleId}. Configuration error. ACKing message to avoid infinite retries.", battleId);
+            _logger.LogError(ex,
+                "Failed to get current ruleset for BattleId: {BattleId}. Configuration error. ACKing message to avoid infinite retries.",
+                battleId);
             return null;
         }
-        
-        int seed = _seedGenerator.GenerateSeed();
+
+        int battleSeed = _seedGenerator.GenerateSeed();
 
         // Build final domain Ruleset for this battle
         Ruleset domainRuleset = Ruleset.Create(
             version: rulesetWithoutSeed.Version,
             turnSeconds: rulesetWithoutSeed.TurnSeconds,
             noActionLimit: rulesetWithoutSeed.NoActionLimit,
-            seed: seed,
+            seed: battleSeed,
             balance: rulesetWithoutSeed.Balance);
 
         // Build initial state
@@ -120,17 +124,21 @@ public class BattleLifecycleAppService
             await _notifier.NotifyBattleReadyAsync(battleId, playerAId, playerBId, cancellationToken);
             await _notifier.NotifyTurnOpenedAsync(battleId, 1, turn1Deadline, cancellationToken);
 
-            _logger.LogInformation("Battle {BattleId} initialized and Turn 1 opened. RulesetVersion: {RulesetVersion}, Seed: {Seed}, Deadline: {DeadlineUtc}", battleId, domainRuleset.Version, seed, turn1Deadline);
+            _logger.LogInformation(
+                "Battle {BattleId} initialized and Turn 1 opened. RulesetVersion: {RulesetVersion}, Seed: {Seed}, Deadline: {DeadlineUtc}",
+                battleId, domainRuleset.Version, battleSeed, turn1Deadline);
         }
         else
         {
-            _logger.LogInformation("Battle {BattleId} already has Turn 1 open or is in a different state (converged, no notification sent)", battleId);
+            _logger.LogInformation(
+                "Battle {BattleId} already has Turn 1 open or is in a different state (converged, no notification sent)",
+                battleId);
         }
 
         return new BattleInitializationResult
         {
             RulesetVersion = domainRuleset.Version,
-            Seed = seed
+            Seed = battleSeed
         };
     }
 
@@ -175,7 +183,7 @@ public class BattleLifecycleAppService
     /// Builds the deadline for Turn 1 based on ruleset and current time.
     /// Pure function - no I/O.
     /// </summary>
-    private DateTime BuildTurn1DeadlineUtc(Ruleset ruleset)
+    private DateTimeOffset BuildTurn1DeadlineUtc(Ruleset ruleset)
     {
         return _clock.UtcNow.AddSeconds(ruleset.TurnSeconds);
     }
@@ -189,6 +197,3 @@ public class BattleInitializationResult
     public int RulesetVersion { get; set; }
     public int Seed { get; set; }
 }
-
-
-

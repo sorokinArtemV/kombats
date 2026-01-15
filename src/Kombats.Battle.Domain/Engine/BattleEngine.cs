@@ -23,16 +23,19 @@ public sealed class BattleEngine : IBattleEngine
 
         if (state.TurnIndex != playerAAction.TurnIndex || state.TurnIndex != playerBAction.TurnIndex)
         {
-            throw new ArgumentException($"Turn index mismatch: state={state.TurnIndex}, actions={playerAAction.TurnIndex}/{playerBAction.TurnIndex}");}
+            throw new ArgumentException(
+                $"Turn index mismatch: state={state.TurnIndex}, actions={playerAAction.TurnIndex}/{playerBAction.TurnIndex}");
+        }
 
         var events = new List<IDomainEvent>();
-        var now = DateTime.UtcNow;
-        
+        var now = DateTimeOffset.UtcNow;
+
         var playerA = new PlayerState(
             state.PlayerA.PlayerId,
             state.PlayerA.MaxHp,
             state.PlayerA.CurrentHp,
             state.PlayerA.Stats);
+
         var playerB = new PlayerState(
             state.PlayerB.PlayerId,
             state.PlayerB.MaxHp,
@@ -44,12 +47,12 @@ public sealed class BattleEngine : IBattleEngine
 
         // Check for DoubleForfeit: both players NoAction
         var doubleForfeitResult = TryResolveDoubleForfeit(
-            state, normalizedActionA, 
-            normalizedActionB, 
-            playerA, 
-            playerB, 
+            state, normalizedActionA,
+            normalizedActionB,
+            playerA,
+            playerB,
             now);
-        
+
         if (doubleForfeitResult != null)
         {
             return doubleForfeitResult;
@@ -183,7 +186,7 @@ public sealed class BattleEngine : IBattleEngine
         PlayerAction normalizedActionB,
         PlayerState playerA,
         PlayerState playerB,
-        DateTime now)
+        DateTimeOffset now)
     {
         if (!normalizedActionA.IsNoAction || !normalizedActionB.IsNoAction)
             return null;
@@ -298,7 +301,7 @@ public sealed class BattleEngine : IBattleEngine
         AttackResolution resolutionBtoA,
         PlayerState playerA,
         PlayerState playerB,
-        DateTime now,
+        DateTimeOffset now,
         List<IDomainEvent> events)
     {
         // Apply damage to starting HP of the turn (simultaneous)
@@ -357,8 +360,7 @@ public sealed class BattleEngine : IBattleEngine
     /// </summary>
     private static PlayerAction NormalizeAction(PlayerAction action)
     {
-        if (action.IsNoAction)
-            return action;
+        if (action.IsNoAction) return action;
 
         // If attack zone is null, it's NoAction
         if (action.AttackZone == null)
@@ -625,8 +627,4 @@ public sealed class BattleEngine : IBattleEngine
         var dodgeRoll = rng.NextDecimal(0, 1);
         return dodgeRoll < dodgeChance;
     }
-
 }
-
-
-

@@ -8,15 +8,14 @@ using Kombats.Battle.Api.Workers;
 using Kombats.Battle.Application.Abstractions;
 using Kombats.Battle.Domain.Engine;
 using Kombats.Battle.Domain.Rules;
+using Kombats.Battle.Infrastructure.Data.DbContext;
 using Kombats.Battle.Infrastructure.Messaging.Consumers;
+using Kombats.Battle.Infrastructure.Messaging.Projections;
 using Kombats.Battle.Infrastructure.Messaging.Publisher;
-using Kombats.Battle.Infrastructure.Persistence.EF.DbContext;
-using Kombats.Battle.Infrastructure.Persistence.EF.Projections;
 using Kombats.Battle.Infrastructure.Profiles;
 using Kombats.Battle.Infrastructure.Rules;
 using Kombats.Battle.Infrastructure.State.Redis;
 using Kombats.Battle.Infrastructure.Time;
-
 using Kombats.Contracts.Battle;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -39,7 +38,7 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
     loggerConfiguration
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services)
-        .Enrich.FromLogContext() ;
+        .Enrich.FromLogContext();
 });
 
 // Add services to the container
@@ -49,7 +48,7 @@ builder.Services.AddControllers();
 builder.Services.AddDbContext<BattleDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException("DefaultConnection connection string is required");
+                           ?? throw new InvalidOperationException("DefaultConnection connection string is required");
     options.UseNpgsql(connectionString);
 });
 
@@ -73,17 +72,20 @@ builder.Services.AddOptions<BattleRulesetsOptions>()
     {
         if (options.CurrentVersion <= 0)
         {
-            throw new InvalidOperationException($"Battle:Rulesets:CurrentVersion must be greater than 0. Current value: {options.CurrentVersion}");
+            throw new InvalidOperationException(
+                $"Battle:Rulesets:CurrentVersion must be greater than 0. Current value: {options.CurrentVersion}");
         }
 
         if (!options.Versions.TryGetValue(options.CurrentVersion.ToString(), out var currentVersionConfig))
         {
-            throw new InvalidOperationException($"Battle:Rulesets:CurrentVersion {options.CurrentVersion} not found in Battle:Rulesets:Versions. Available versions: {string.Join(", ", options.Versions.Keys)}");
+            throw new InvalidOperationException(
+                $"Battle:Rulesets:CurrentVersion {options.CurrentVersion} not found in Battle:Rulesets:Versions. Available versions: {string.Join(", ", options.Versions.Keys)}");
         }
 
         if (currentVersionConfig.TurnSeconds <= 0)
         {
-            throw new InvalidOperationException($"Battle:Rulesets:Versions:{options.CurrentVersion}:TurnSeconds must be greater than 0. Current value: {currentVersionConfig.TurnSeconds}");
+            throw new InvalidOperationException(
+                $"Battle:Rulesets:Versions:{options.CurrentVersion}:TurnSeconds must be greater than 0. Current value: {currentVersionConfig.TurnSeconds}");
         }
 
         if (currentVersionConfig.NoActionLimit <= 0)
@@ -94,7 +96,8 @@ builder.Services.AddOptions<BattleRulesetsOptions>()
 
         if (currentVersionConfig.CombatBalance == null)
         {
-            throw new InvalidOperationException($"Battle:Rulesets:Versions:{options.CurrentVersion}:CombatBalance is required but is null.");
+            throw new InvalidOperationException(
+                $"Battle:Rulesets:Versions:{options.CurrentVersion}:CombatBalance is required but is null.");
         }
 
         return true;
@@ -102,7 +105,6 @@ builder.Services.AddOptions<BattleRulesetsOptions>()
     .ValidateOnStart();
 
 // Register Domain
-builder.Services.AddSingleton<IRandomProvider, SystemRandomProvider>();
 builder.Services.AddScoped<IBattleEngine, BattleEngine>();
 
 // Register Application ports (implemented by Infrastructure)
@@ -118,19 +120,13 @@ builder.Services.AddScoped<IRulesetProvider, RulesetProvider>();
 builder.Services.AddSingleton<ISeedGenerator, SeedGenerator>();
 
 // Register Application services
-builder.Services.AddSingleton<BattleRulesDefaults>();
 builder.Services.AddScoped<PlayerActionNormalizer>();
 builder.Services.AddScoped<BattleLifecycleAppService>();
 builder.Services.AddScoped<BattleTurnAppService>();
 
 // Configure SignalR with JSON options to serialize enums as strings
-builder.Services.AddSignalR(options =>
-{
-    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
-}).AddJsonProtocol(options =>
-{
-    options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
-});
+builder.Services.AddSignalR(options => { options.EnableDetailedErrors = builder.Environment.IsDevelopment(); })
+    .AddJsonProtocol(options => { options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()); });
 
 // Configure messaging with typed DbContext for outbox/inbox support
 builder.Services.AddMessaging<BattleDbContext>(
@@ -165,7 +161,7 @@ app.UseSerilogRequestLogging(options =>
             : statusCode >= 400 ? LogEventLevel.Warning
             : LogEventLevel.Information;
     };
-    
+
     options.EnrichDiagnosticContext = (diagContext, httpContext) =>
     {
         diagContext.Set("ClientIP", httpContext.Connection.RemoteIpAddress?.ToString());
@@ -198,10 +194,9 @@ app.MapHub<BattleHub>("/battlehub");
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<BattleDbContext>();
-    
+
     // Apply migrations for BattleDbContext (includes battles, player_profiles, and inbox/outbox tables)
     await dbContext.Database.MigrateAsync();
 }
 
 app.Run();
-

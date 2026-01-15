@@ -92,7 +92,7 @@ public class BattleHub : Hub
             },
             Phase = phaseRealtime,
             TurnIndex = state.TurnIndex,
-            DeadlineUtc = new DateTimeOffset(state.DeadlineUtc.ToUniversalTime(), TimeSpan.Zero),
+            DeadlineUtc = state.DeadlineUtc,
             NoActionStreakBoth = state.NoActionStreakBoth,
             LastResolvedTurnIndex = state.LastResolvedTurnIndex,
             EndedReason = endedReason,

@@ -7,7 +7,7 @@ namespace Kombats.Battle.Domain.Events;
 public interface IDomainEvent
 {
     Guid BattleId { get; }
-    DateTime OccurredAt { get; }
+    DateTimeOffset OccurredAt { get; }
 }
 
 

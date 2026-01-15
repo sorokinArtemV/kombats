@@ -1,9 +1,9 @@
 using System.Data;
 using Kombats.Battle.Application.UseCases.Lifecycle;
+using Kombats.Battle.Infrastructure.Data.DbContext;
+using Kombats.Battle.Infrastructure.Data.Entities;
 using Kombats.Battle.Infrastructure.Persistence.EF;
 using Kombats.Contracts.Battle;
-using Kombats.Battle.Infrastructure.Persistence.EF.DbContext;
-using Kombats.Battle.Infrastructure.Persistence.EF.Entities;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -33,8 +33,9 @@ public class CreateBattleConsumer : IConsumer<CreateBattle>
     public async Task Consume(ConsumeContext<CreateBattle> context)
     {
         var command = context.Message;
-        _logger.LogInformation("Processing CreateBattle command for BattleId: {BattleId}, MatchId: {MatchId}", command.BattleId, command.MatchId);
-        
+        _logger.LogInformation("Processing CreateBattle command for BattleId: {BattleId}, MatchId: {MatchId}",
+            command.BattleId, command.MatchId);
+
         var battle = new BattleEntity
         {
             BattleId = command.BattleId,
@@ -42,7 +43,7 @@ public class CreateBattleConsumer : IConsumer<CreateBattle>
             PlayerAId = command.PlayerAId,
             PlayerBId = command.PlayerBId,
             State = "ArenaOpen",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow
         };
 
         _dbContext.Battles.Add(battle);
@@ -50,7 +51,7 @@ public class CreateBattleConsumer : IConsumer<CreateBattle>
         try
         {
             await _dbContext.SaveChangesAsync(context.CancellationToken);
-            
+
             var initResult = await _lifecycleService.HandleBattleCreatedAsync(
                 battle.BattleId,
                 battle.MatchId,
@@ -60,15 +61,21 @@ public class CreateBattleConsumer : IConsumer<CreateBattle>
 
             if (initResult == null)
             {
-                _logger.LogWarning("Battle initialization failed for BattleId: {BattleId}. Not publishing BattleCreated event.", command.BattleId);
+                _logger.LogWarning(
+                    "Battle initialization failed for BattleId: {BattleId}. Not publishing BattleCreated event.",
+                    command.BattleId);
                 return;
             }
-            
-            _logger.LogInformation("Successfully created battle {BattleId}, published BattleCreated event, and initialized Redis state", command.BattleId);
+
+            _logger.LogInformation(
+                "Successfully created battle {BattleId}, published BattleCreated event, and initialized Redis state",
+                command.BattleId);
         }
         catch (DbUpdateException dbEx) when (IsUniqueViolation(dbEx))
         {
-            _logger.LogInformation("Battle {BattleId} already exists (unique violation), skipping creation (idempotent behavior)", command.BattleId);
+            _logger.LogInformation(
+                "Battle {BattleId} already exists (unique violation), skipping creation (idempotent behavior)",
+                command.BattleId);
             // ACK without publishing duplicate events
             return;
         }
@@ -81,5 +88,3 @@ public class CreateBattleConsumer : IConsumer<CreateBattle>
                ex.InnerException?.Message?.Contains("unique constraint") == true;
     }
 }
-
-

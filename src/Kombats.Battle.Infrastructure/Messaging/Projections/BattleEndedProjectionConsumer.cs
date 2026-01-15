@@ -1,10 +1,10 @@
+using Kombats.Battle.Infrastructure.Data.DbContext;
 using Kombats.Contracts.Battle;
-using Kombats.Battle.Infrastructure.Persistence.EF.DbContext;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Kombats.Battle.Infrastructure.Persistence.EF.Projections;
+namespace Kombats.Battle.Infrastructure.Messaging.Projections;
 
 /// <summary>
 /// Projection consumer for BattleEnded events.
@@ -33,14 +33,15 @@ public class BattleEndedProjectionConsumer : IConsumer<BattleEnded>
             battleId, battleEnded.Reason, context.MessageId);
 
         // Load battle by BattleId (PK)
-        var battle = await _dbContext.Battles.FirstOrDefaultAsync(b => b.BattleId == battleId, context.CancellationToken);
+        var battle = await _dbContext.Battles
+            .FirstOrDefaultAsync(b => b.BattleId == battleId, context.CancellationToken);
 
         if (battle == null)
         {
             _logger.LogWarning(
                 "Battle {BattleId} not found in read model for BattleEnded projection. " +
-                "This is idempotent - battle may have been created only in Redis. MessageId: {MessageId}",
-                battleId, context.MessageId);
+                "This is idempotent - battle may have been created only in Redis. MessageId: {MessageId}", battleId,
+                context.MessageId);
             return;
         }
 
@@ -90,5 +91,3 @@ public class BattleEndedProjectionConsumer : IConsumer<BattleEnded>
             battleId, battleEnded.Reason, battleEnded.WinnerPlayerId, battleEnded.EndedAt, context.MessageId);
     }
 }
-
-

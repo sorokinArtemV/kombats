@@ -31,9 +31,9 @@ internal static class DeterministicTurnRng
     {
         // Base seed for this turn: combines ruleset seed, battle ID, and turn index
         var baseTurnSeed = Hash64(
-            (ulong)(uint)state.Ruleset.Seed,
+            (uint)state.Ruleset.Seed,
             state.BattleId,
-            (ulong)(uint)state.TurnIndex);
+            (uint)state.TurnIndex);
 
         // Derive separate seeds for each attack direction to ensure order independence
         // A->B uses stream=1, B->A uses stream=2

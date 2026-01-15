@@ -1,4 +1,4 @@
-namespace Kombats.Battle.Infrastructure.Persistence.EF.Entities;
+namespace Kombats.Battle.Infrastructure.Data.Entities;
 
 /// <summary>
 /// Entity for player combat profile (stats snapshot).
@@ -14,11 +14,3 @@ public class PlayerProfileEntity
     public DateTime UpdatedAt { get; set; }
     public int Version { get; set; } = 1;
 }
-
-
-
-
-
-
-
-
