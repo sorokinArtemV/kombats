@@ -1,6 +1,7 @@
 using System;
 using Kombats.Battle.Domain.Model;
 using Kombats.Battle.Application.ReadModels;
+using Kombats.Battle.Application.UseCases.Turns;
 
 namespace Kombats.Battle.Application.Abstractions;
 
@@ -67,14 +68,22 @@ public interface IBattleStateStore
         TimeSpan leaseTtl,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Stores a canonical action command for a player in a specific turn.
+    /// Uses first-write-wins semantics (SET NX in Redis).
+    /// </summary>
     Task<ActionStoreResult> StoreActionAsync(
         Guid battleId, 
         int turnIndex, 
         Guid playerId, 
-        string actionPayload,
+        PlayerActionCommand actionCommand,
         CancellationToken cancellationToken = default);
 
-    Task<(string? PlayerAAction, string? PlayerBAction)> GetActionsAsync(
+    /// <summary>
+    /// Retrieves canonical action commands for both players in a specific turn.
+    /// Returns null for a player if no action was stored.
+    /// </summary>
+    Task<(PlayerActionCommand? PlayerAAction, PlayerActionCommand? PlayerBAction)> GetActionsAsync(
         Guid battleId, 
         int turnIndex, 
         Guid playerAId,

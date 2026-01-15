@@ -7,7 +7,6 @@ using Kombats.Battle.Infrastructure.Realtime.SignalR;
 using Kombats.Battle.Api.Workers;
 using Kombats.Battle.Application.Abstractions;
 using Kombats.Battle.Domain.Engine;
-using Kombats.Battle.Domain.Rules;
 using Kombats.Battle.Infrastructure.Data.DbContext;
 using Kombats.Battle.Infrastructure.Messaging.Consumers;
 using Kombats.Battle.Infrastructure.Messaging.Projections;
@@ -120,7 +119,7 @@ builder.Services.AddScoped<IRulesetProvider, RulesetProvider>();
 builder.Services.AddSingleton<ISeedGenerator, SeedGenerator>();
 
 // Register Application services
-builder.Services.AddScoped<PlayerActionNormalizer>();
+builder.Services.AddScoped<IActionIntake, ActionIntakeService>();
 builder.Services.AddScoped<BattleLifecycleAppService>();
 builder.Services.AddScoped<BattleTurnAppService>();
 

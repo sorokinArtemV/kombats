@@ -1,7 +1,6 @@
 using Kombats.Battle.Domain.Engine;
 using Kombats.Battle.Domain.Events;
 using Kombats.Battle.Domain.Model;
-using Kombats.Battle.Domain.Rules;
 using Kombats.Battle.Application.Abstractions;
 using Kombats.Battle.Application.Mapping;
 using Microsoft.Extensions.Logging;
@@ -18,7 +17,7 @@ public class BattleTurnAppService
     private readonly IBattleEngine _battleEngine;
     private readonly IBattleRealtimeNotifier _notifier;
     private readonly IBattleEventPublisher _eventPublisher;
-    private readonly PlayerActionNormalizer _actionNormalizer;
+    private readonly IActionIntake _actionIntake;
     private readonly IClock _clock;
     private readonly ILogger<BattleTurnAppService> _logger;
 
@@ -27,7 +26,7 @@ public class BattleTurnAppService
         IBattleEngine battleEngine,
         IBattleRealtimeNotifier notifier,
         IBattleEventPublisher eventPublisher,
-        PlayerActionNormalizer actionNormalizer,
+        IActionIntake actionIntake,
         IClock clock,
         ILogger<BattleTurnAppService> logger)
     {
@@ -35,7 +34,7 @@ public class BattleTurnAppService
         _battleEngine = battleEngine;
         _notifier = notifier;
         _eventPublisher = eventPublisher;
-        _actionNormalizer = actionNormalizer;
+        _actionIntake = actionIntake;
         _clock = clock;
         _logger = logger;
     }
@@ -82,21 +81,22 @@ public class BattleTurnAppService
             throw new InvalidOperationException("Battle has ended");
         }
 
-        // Normalize action payload (validates protocol and converts invalid to NoAction)
-        var normalizedPayload = _actionNormalizer.NormalizeActionPayload(
-            state,
+        // Process action through intake pipeline (parses JSON, validates protocol and semantics)
+        var canonicalAction = _actionIntake.ProcessAction(
+            battleId,
+            playerId,
             clientTurnIndex,
             actionPayload,
-            playerId);
+            state);
 
-        // Store action for current server turn index (first-write-wins)
-        var storeResult = await _stateStore.StoreActionAsync(battleId, state.TurnIndex, playerId, normalizedPayload, cancellationToken);
+        // Store canonical action for current server turn index (first-write-wins)
+        var storeResult = await _stateStore.StoreActionAsync(battleId, state.TurnIndex, playerId, canonicalAction, cancellationToken);
 
         if (storeResult == ActionStoreResult.Accepted)
         {
             _logger.LogInformation(
-                "Action stored for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}, IsNoAction: {IsNoAction}",
-                battleId, state.TurnIndex, playerId, string.IsNullOrEmpty(normalizedPayload));
+                "Action stored for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}, Quality: {Quality}, IsNoAction: {IsNoAction}",
+                battleId, state.TurnIndex, playerId, canonicalAction.Quality, canonicalAction.IsNoAction);
         }
         else
         {
@@ -209,17 +209,23 @@ public class BattleTurnAppService
             return false;
         }
 
-        // Read actions for both players
-        var (playerAActionPayload, playerBActionPayload) = await _stateStore.GetActionsAsync(
+        // Read canonical actions for both players
+        var (playerAActionCommand, playerBActionCommand) = await _stateStore.GetActionsAsync(
             battleId,
             turnIndex,
             state.PlayerAId,
             state.PlayerBId,
             cancellationToken);
 
-        // Parse actions into domain objects
-        var playerAAction = ActionParser.ParseAction(playerAActionPayload, state.PlayerAId, turnIndex);
-        var playerBAction = ActionParser.ParseAction(playerBActionPayload, state.PlayerBId, turnIndex);
+        // Convert canonical actions to domain PlayerAction objects
+        // If action is missing (null), treat as NoAction
+        var playerAAction = playerAActionCommand != null
+            ? PlayerActionConverter.ToDomainAction(playerAActionCommand)
+            : PlayerAction.NoAction(state.PlayerAId, turnIndex);
+        
+        var playerBAction = playerBActionCommand != null
+            ? PlayerActionConverter.ToDomainAction(playerBActionCommand)
+            : PlayerAction.NoAction(state.PlayerBId, turnIndex);
 
         // Convert to domain state
         var domainState = BattleStateToDomainMapper.ToDomainState(state);
