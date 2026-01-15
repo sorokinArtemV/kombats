@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Combats.Infrastructure.Messaging.DependencyInjection;
 using Kombats.Battle.Application.UseCases.Lifecycle;
 using Kombats.Battle.Application.UseCases.Turns;
@@ -38,7 +39,6 @@ builder.Host.UseSerilog((context, services, loggerConfiguration) =>
     loggerConfiguration
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services)
-        
         .Enrich.FromLogContext() ;
 });
 
@@ -62,6 +62,9 @@ builder.Services.Configure<BattleRedisOptions>(builder.Configuration.GetSection(
 
 // Configure Battle Rulesets options (versioned rulesets from appsettings)
 builder.Services.Configure<BattleRulesetsOptions>(builder.Configuration.GetSection(BattleRulesetsOptions.SectionName));
+
+// Configure TurnDeadlineWorker options
+builder.Services.Configure<TurnDeadlineWorkerOptions>(builder.Configuration.GetSection("Battle:TurnDeadlineWorker"));
 
 // Validate BattleRulesetsOptions at startup (fail fast)
 builder.Services.AddOptions<BattleRulesetsOptions>()
@@ -126,7 +129,7 @@ builder.Services.AddSignalR(options =>
     options.EnableDetailedErrors = builder.Environment.IsDevelopment();
 }).AddJsonProtocol(options =>
 {
-    options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
 // Configure messaging with typed DbContext for outbox/inbox support
@@ -136,14 +139,12 @@ builder.Services.AddMessaging<BattleDbContext>(
     x =>
     {
         x.AddConsumer<CreateBattleConsumer>();
-        x.AddConsumer<EndBattleConsumer>();
         x.AddConsumer<BattleEndedProjectionConsumer>();
     },
     messagingBuilder =>
     {
         // Register entity name mappings (logical keys -> resolved from configuration)
         messagingBuilder.Map<CreateBattle>("CreateBattle");
-        messagingBuilder.Map<EndBattle>("EndBattle");
         messagingBuilder.Map<BattleEnded>("BattleEnded");
     });
 
@@ -164,8 +165,7 @@ app.UseSerilogRequestLogging(options =>
             : statusCode >= 400 ? LogEventLevel.Warning
             : LogEventLevel.Information;
     };
-
-    // Что добавлять в event
+    
     options.EnrichDiagnosticContext = (diagContext, httpContext) =>
     {
         diagContext.Set("ClientIP", httpContext.Connection.RemoteIpAddress?.ToString());

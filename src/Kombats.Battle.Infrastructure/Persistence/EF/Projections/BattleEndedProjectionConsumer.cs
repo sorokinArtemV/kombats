@@ -1,4 +1,3 @@
-using Kombats.Battle.Infrastructure.Persistence.EF;
 using Kombats.Contracts.Battle;
 using Kombats.Battle.Infrastructure.Persistence.EF.DbContext;
 using MassTransit;
@@ -34,12 +33,10 @@ public class BattleEndedProjectionConsumer : IConsumer<BattleEnded>
             battleId, battleEnded.Reason, context.MessageId);
 
         // Load battle by BattleId (PK)
-        var battle = await _dbContext.Battles
-            .FirstOrDefaultAsync(b => b.BattleId == battleId, context.CancellationToken);
+        var battle = await _dbContext.Battles.FirstOrDefaultAsync(b => b.BattleId == battleId, context.CancellationToken);
 
         if (battle == null)
         {
-            // Idempotent: if entity is not found, log and return without throwing
             _logger.LogWarning(
                 "Battle {BattleId} not found in read model for BattleEnded projection. " +
                 "This is idempotent - battle may have been created only in Redis. MessageId: {MessageId}",

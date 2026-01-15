@@ -1,9 +1,6 @@
 using Kombats.Battle.Application.Abstractions;
 using Kombats.Battle.Application.UseCases.Turns;
-using Kombats.Battle.Domain.Model;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Kombats.Battle.Api.Workers;
 
@@ -16,23 +13,18 @@ public sealed class TurnDeadlineWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TurnDeadlineWorker> _logger;
-
-    private const int BatchSize = 50; // Process up to 50 battles per iteration
-    private static readonly TimeSpan ClaimLeaseTtl = TimeSpan.FromSeconds(4); // Lock TTL for claim processing (reduced for faster recovery after crashes)
+    private readonly TurnDeadlineWorkerOptions _options;
     
-    // Adaptive delay configuration
-    private const int IdleDelayMinMs = 200; // Base delay when no battles claimed
-    private const int IdleDelayMaxMs = 1000; // Maximum delay when no battles claimed
-    private const int BacklogDelayMs = 30; // Small delay when backlog exists (to drain efficiently)
-    
-    private int _consecutiveEmptyIterations = 0; // For backoff when idle
+    private int _consecutiveEmptyIterations = 0;
 
     public TurnDeadlineWorker(
         IServiceScopeFactory scopeFactory,
-        ILogger<TurnDeadlineWorker> logger)
+        ILogger<TurnDeadlineWorker> logger,
+        IOptions<TurnDeadlineWorkerOptions> options)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _options = options.Value;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -49,7 +41,7 @@ public sealed class TurnDeadlineWorker : BackgroundService
             {
                 _logger.LogError(ex, "Error in turn deadline worker iteration");
                 // On error, wait a bit before retrying to avoid tight error loops
-                await Task.Delay(TimeSpan.FromMilliseconds(IdleDelayMinMs), stoppingToken);
+                await Task.Delay(TimeSpan.FromMilliseconds(_options.ErrorDelayMs), stoppingToken);
                 _consecutiveEmptyIterations = 0; // Reset backoff on error
             }
         }
@@ -63,26 +55,35 @@ public sealed class TurnDeadlineWorker : BackgroundService
         
         var stateStore = scope.ServiceProvider.GetRequiredService<IBattleStateStore>();
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+        var turnAppService = scope.ServiceProvider.GetRequiredService<BattleTurnAppService>();
 
         // Get current time and claim due battles
         var now = clock.UtcNow;
-        var claimedBattles = await stateStore.ClaimDueBattlesAsync(now, BatchSize, ClaimLeaseTtl, cancellationToken);
+        var claimedBattles = await stateStore.ClaimDueBattlesAsync(now, _options.BatchSize, _options.ClaimLeaseTtl, cancellationToken);
+        
+        // Capture consecutive empty iterations before potential reset (for logging)
+        var emptyIterationsBefore = _consecutiveEmptyIterations;
         
         int delayMs;
         if (claimedBattles.Count == 0)
         {
-            // No battles claimed - use adaptive backoff: 200ms, 400ms, 800ms, max 1000ms
+            // No battles claimed - use adaptive backoff
             _consecutiveEmptyIterations++;
             delayMs = Math.Min(
-                (int)(IdleDelayMinMs * Math.Pow(2, Math.Min(_consecutiveEmptyIterations - 1, 3))),
-                IdleDelayMaxMs);
+                (int)(_options.IdleDelayMinMs * Math.Pow(2, Math.Min(_consecutiveEmptyIterations - 1, _options.MaxBackoffSteps))),
+                _options.IdleDelayMaxMs);
         }
         else
         {
             // Battles claimed - process them and use small delay to drain backlog
             _consecutiveEmptyIterations = 0; // Reset backoff
-            await ProcessClaimedBattlesAsync(scope, stateStore, claimedBattles, now, cancellationToken);
-            delayMs = BacklogDelayMs;
+            delayMs = _options.BacklogDelayMs;
+        }
+
+        // Process claimed battles (if any) and log summary with actual delay
+        if (claimedBattles.Count > 0)
+        {
+            await ProcessClaimedBattlesAsync(turnAppService, claimedBattles, delayMs, emptyIterationsBefore, cancellationToken);
         }
 
         // Delay before next iteration
@@ -90,102 +91,50 @@ public sealed class TurnDeadlineWorker : BackgroundService
     }
 
     private async Task ProcessClaimedBattlesAsync(
-        IServiceScope scope,
-        IBattleStateStore stateStore,
+        BattleTurnAppService turnAppService,
         IReadOnlyList<ClaimedBattleDue> claimedBattles,
-        DateTime now,
+        int delayMs,
+        int consecutiveEmptyIterationsBefore,
         CancellationToken cancellationToken)
     {
-        var turnAppService = scope.ServiceProvider.GetRequiredService<BattleTurnAppService>();
-
         _logger.LogDebug(
             "Processing {Count} claimed battles for deadline resolution",
             claimedBattles.Count);
 
         var resolvedCount = 0;
-        var skippedStateMismatchCount = 0;
-        var skippedMissingStateCount = 0;
+        var skippedCount = 0;
         var transientErrorCount = 0;
 
         foreach (var claimed in claimedBattles)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
             var battleId = claimed.BattleId;
-            var expectedTurnIndex = claimed.TurnIndex;
+            var claimedTurnIndex = claimed.TurnIndex;
 
             try
             {
-                // Load state to verify current turn index matches claim
-                var state = await stateStore.GetStateAsync(battleId, cancellationToken);
-                if (state == null)
-                {
-                    // State missing - already removed from ZSET by claim script
-                    skippedMissingStateCount++;
-                    _logger.LogDebug(
-                        "Battle {BattleId} state missing after claim (already removed from ZSET)",
-                        battleId);
-                    continue;
-                }
-
-                // Verify turn index matches (state may have advanced)
-                if (state.TurnIndex != expectedTurnIndex)
-                {
-                    // Turn already advanced - someone else resolved it
-                    // This is expected and safe - do NOT re-add to ZSET
-                    skippedStateMismatchCount++;
-                    _logger.LogDebug(
-                        "Battle {BattleId} turn advanced from {ExpectedTurn} to {ActualTurn} (already resolved by another worker)",
-                        battleId, expectedTurnIndex, state.TurnIndex);
-                    continue;
-                }
-
-                // Verify phase is still TurnOpen or Resolving (may have been transitioned)
-                if (state.Phase != BattlePhase.TurnOpen && state.Phase != BattlePhase.Resolving)
-                {
-                    if (state.Phase == BattlePhase.Ended)
-                    {
-                        // Battle ended - already removed from ZSET by claim script
-                        skippedStateMismatchCount++;
-                        _logger.LogDebug(
-                            "Battle {BattleId} already ended (already removed from ZSET)",
-                            battleId);
-                    }
-                    else
-                    {
-                        // Unexpected phase - do NOT re-add to ZSET
-                        skippedStateMismatchCount++;
-                        _logger.LogDebug(
-                            "Battle {BattleId} in unexpected phase {Phase} for turn {TurnIndex}",
-                            battleId, state.Phase, expectedTurnIndex);
-                    }
-                    continue;
-                }
-
-                // Note: Deadline validation is handled by ClaimDueBattlesAsync Lua script.
-                // If we got here, the battle was claimed and should be processed.
-                // The claim script already validated phase and postponed non-TurnOpen battles.
-
-                // Try to resolve the turn
-                // BattleTurnAppService uses CAS to ensure only one resolution happens
+                // ResolveTurnAsync is the single source of truth - it handles all state validation
+                // and uses CAS to ensure idempotency. No need to pre-read state.
                 var resolved = await turnAppService.ResolveTurnAsync(battleId, cancellationToken);
                 
                 if (resolved)
                 {
                     resolvedCount++;
-                    
-                    // Log at Info level when battle is actually resolved
                     _logger.LogInformation(
-                        "Resolved turn {TurnIndex} for BattleId: {BattleId}",
-                        expectedTurnIndex, battleId);
+                        "Resolved battle claimed by deadline. BattleId: {BattleId}, ClaimedTurnIndex: {ClaimedTurnIndex}",
+                        battleId, claimedTurnIndex);
                 }
                 else
                 {
-                    // Resolution failed due to state mismatch (e.g., phase changed, turn advanced)
-                    // This is expected when another worker/thread resolved it concurrently
-                    // Do NOT re-add to ZSET - the state transition will have already added the next deadline
-                    skippedStateMismatchCount++;
+                    // Already resolved / not eligible / concurrent resolution
+                    skippedCount++;
                     _logger.LogDebug(
-                        "Turn {TurnIndex} resolution skipped for BattleId: {BattleId} (state mismatch - likely resolved by another worker)",
-                        expectedTurnIndex, battleId);
+                        "Skipped resolving claimed battle (already resolved / not eligible / concurrent resolution). BattleId: {BattleId}, ClaimedTurnIndex: {ClaimedTurnIndex}",
+                        battleId, claimedTurnIndex);
                 }
             }
             catch (Exception ex)
@@ -195,15 +144,24 @@ public sealed class TurnDeadlineWorker : BackgroundService
                 // If worker crashes, the lease will expire and battle will become due again.
                 transientErrorCount++;
                 _logger.LogWarning(ex,
-                    "Transient error processing battle {BattleId} turn {TurnIndex}. Battle will be retried after lease expires.",
-                    battleId, expectedTurnIndex);
+                    "Transient error processing battle {BattleId} claimed turn {ClaimedTurnIndex}. Battle will be retried after lease expires.",
+                    battleId, claimedTurnIndex);
             }
         }
 
-        // Log summary at Debug level per loop iteration
-        _logger.LogDebug(
-            "Processed {Total} claimed battles: {Resolved} resolved, {SkippedStateMismatch} skipped (state mismatch), {SkippedMissingState} skipped (missing state), {TransientErrors} transient errors",
-            claimedBattles.Count, resolvedCount, skippedStateMismatchCount, skippedMissingStateCount, transientErrorCount);
+        // Log summary per iteration with actual delay used
+        if (transientErrorCount >= _options.TransientErrorWarnThreshold)
+        {
+            _logger.LogWarning(
+                "Processed {Total} claimed battles: {Resolved} resolved, {Skipped} skipped (not resolved), {TransientErrors} transient errors. DelayMs: {DelayMs}, ConsecutiveEmptyIterations: {ConsecutiveEmptyIterations}",
+                claimedBattles.Count, resolvedCount, skippedCount, transientErrorCount, delayMs, consecutiveEmptyIterationsBefore);
+        }
+        else
+        {
+            _logger.LogDebug(
+                "Processed {Total} claimed battles: {Resolved} resolved, {Skipped} skipped (not resolved), {TransientErrors} transient errors. DelayMs: {DelayMs}, ConsecutiveEmptyIterations: {ConsecutiveEmptyIterations}",
+                claimedBattles.Count, resolvedCount, skippedCount, transientErrorCount, delayMs, consecutiveEmptyIterationsBefore);
+        }
     }
 
 }
