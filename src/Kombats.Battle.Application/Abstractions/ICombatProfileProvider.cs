@@ -21,8 +21,8 @@ public record CombatProfile(
     Guid PlayerId,
     int Strength,
     int Stamina,
-    int Agility = 0,
-    int Intuition = 0);
+    int Agility,
+    int Intuition);
 
 
 

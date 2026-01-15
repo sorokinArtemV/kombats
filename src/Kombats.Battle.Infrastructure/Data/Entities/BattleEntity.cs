@@ -1,4 +1,4 @@
-namespace Kombats.Battle.Infrastructure.Persistence.EF.Entities;
+namespace Kombats.Battle.Infrastructure.Data.Entities;
 
 public class BattleEntity
 {
@@ -7,17 +7,8 @@ public class BattleEntity
     public Guid PlayerAId { get; set; }
     public Guid PlayerBId { get; set; }
     public string State { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; }
-    public DateTime? EndedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? EndedAt { get; set; }
     public string? EndReason { get; set; }
     public Guid? WinnerPlayerId { get; set; }
 }
-
-
-
-
-
-
-
-
-

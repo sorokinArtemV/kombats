@@ -11,10 +11,8 @@ public class SeedGenerator : ISeedGenerator
 {
     public int GenerateSeed()
     {
-        // Use RandomNumberGenerator for cryptographically safe randomness
         var bytes = new byte[4];
         RandomNumberGenerator.Fill(bytes);
         return BitConverter.ToInt32(bytes);
     }
 }
-

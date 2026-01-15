@@ -1,6 +1,5 @@
 using Kombats.Battle.Application.ReadModels;
 using Kombats.Battle.Domain.Model;
-using Kombats.Battle.Infrastructure.State.Redis;
 
 namespace Kombats.Battle.Infrastructure.State.Redis.Mapping;
 
@@ -23,7 +22,7 @@ public static class StoredStateMapper
             Ruleset = state.Ruleset,
             Phase = state.Phase,
             TurnIndex = state.TurnIndex,
-            DeadlineUtc = state.GetDeadlineUtc(),
+            DeadlineUtc = DateTimeOffset.FromUnixTimeMilliseconds(state.DeadlineUnixMs),
             NoActionStreakBoth = state.NoActionStreakBoth,
             LastResolvedTurnIndex = state.LastResolvedTurnIndex,
             MatchId = state.MatchId,
@@ -44,9 +43,9 @@ public static class StoredStateMapper
     /// <summary>
     /// Maps Domain BattleDomainState to Infrastructure BattleState (for storage).
     /// </summary>
-    public static BattleState FromDomainState(BattleDomainState domainState, DateTime deadlineUtc, int version)
+    public static BattleState FromDomainState(BattleDomainState domainState, DateTimeOffset deadlineUtc, int version)
     {
-        var state = new BattleState
+        return new BattleState
         {
             BattleId = domainState.BattleId,
             PlayerAId = domainState.PlayerAId,
@@ -67,10 +66,9 @@ public static class StoredStateMapper
             PlayerBStrength = domainState.PlayerB.Stats.Strength,
             PlayerBStamina = domainState.PlayerB.Stats.Stamina,
             PlayerBAgility = domainState.PlayerB.Stats.Agility,
-            PlayerBIntuition = domainState.PlayerB.Stats.Intuition
+            PlayerBIntuition = domainState.PlayerB.Stats.Intuition,
+            DeadlineUnixMs = deadlineUtc.ToUnixTimeMilliseconds()
         };
-        state.SetDeadlineUtc(deadlineUtc);
-        return state;
     }
 }
 

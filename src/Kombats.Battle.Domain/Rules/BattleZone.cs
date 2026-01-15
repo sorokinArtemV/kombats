@@ -36,8 +36,7 @@ public static class BattleZoneHelper
     public static bool IsValidBlockPattern(BattleZone zone1, BattleZone zone2)
     {
         // Check both orders (zone1-zone2 and zone2-zone1)
-        return ValidBlockPatterns.Contains((zone1, zone2)) || 
-               ValidBlockPatterns.Contains((zone2, zone1));
+        return ValidBlockPatterns.Contains((zone1, zone2)) || ValidBlockPatterns.Contains((zone2, zone1));
     }
 
     /// <summary>
@@ -45,8 +44,7 @@ public static class BattleZoneHelper
     /// </summary>
     public static bool IsZoneBlocked(BattleZone attackZone, BattleZone? blockZone1, BattleZone? blockZone2)
     {
-        if (blockZone1 == null || blockZone2 == null)
-            return false;
+        if (blockZone1 == null || blockZone2 == null) return false;
 
         return attackZone == blockZone1 || attackZone == blockZone2;
     }

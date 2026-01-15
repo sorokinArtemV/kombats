@@ -13,3 +13,6 @@ public interface ISeedGenerator
     int GenerateSeed();
 }
 
+
+
+

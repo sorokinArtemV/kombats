@@ -9,7 +9,7 @@ public static class TurnDeadlinePolicy
     /// <summary>
     /// Only resolve when 'now' is after 'deadlineUtc' plus a small skew buffer.
     /// </summary>
-    public static bool ShouldResolve(DateTime now, DateTime deadlineUtc, int skewMs)
+    public static bool ShouldResolve(DateTimeOffset now, DateTimeOffset deadlineUtc, int skewMs)
     {
         return now >= deadlineUtc.AddMilliseconds(skewMs);
     }

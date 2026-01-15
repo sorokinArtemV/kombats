@@ -52,7 +52,7 @@ public class DevBattlesController : ControllerBase
             MatchId = matchId,
             PlayerAId = request.PlayerAId,
             PlayerBId = request.PlayerBId,
-            RequestedAt = DateTime.UtcNow
+            RequestedAt = DateTimeOffset.UtcNow
         };
 
         _logger.LogInformation(

@@ -152,9 +152,14 @@ public sealed record CritEffectBalance
     public CritEffectBalance(CritEffectMode mode, decimal multiplier, decimal hybridBlockMultiplier)
     {
         if (multiplier <= 0)
+        {
             throw new ArgumentException("Multiplier must be positive", nameof(multiplier));
+        }
+
         if (hybridBlockMultiplier < 0 || hybridBlockMultiplier > 1)
+        {
             throw new ArgumentException("HybridBlockMultiplier must be between 0 and 1", nameof(hybridBlockMultiplier));
+        }
 
         Mode = mode;
         Multiplier = multiplier;

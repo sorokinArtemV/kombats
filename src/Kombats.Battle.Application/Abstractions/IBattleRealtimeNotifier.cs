@@ -9,10 +9,32 @@ namespace Kombats.Battle.Application.Abstractions;
 /// </summary>
 public interface IBattleRealtimeNotifier
 {
-    public Task NotifyBattleReadyAsync(Guid battleId, Guid playerAId, Guid playerBId, CancellationToken cancellationToken = default);
-    public Task NotifyTurnOpenedAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default);
-    public Task NotifyTurnResolvedAsync(Guid battleId, int turnIndex, string playerAAction, string playerBAction, TurnResolutionLog? log = null, CancellationToken cancellationToken = default);
-    public Task NotifyPlayerDamagedAsync(Guid battleId, Guid playerId, int damage, int remainingHp, int turnIndex, CancellationToken cancellationToken = default);
+    public Task NotifyBattleReadyAsync(
+        Guid battleId, 
+        Guid playerAId, 
+        Guid playerBId,
+        CancellationToken cancellationToken = default);
+
+    public Task NotifyTurnOpenedAsync(
+        Guid battleId, int turnIndex, 
+        DateTimeOffset deadlineUtc,
+        CancellationToken cancellationToken = default);
+
+    public Task NotifyTurnResolvedAsync(
+        Guid battleId, int turnIndex, 
+        string playerAAction, 
+        string playerBAction,
+        TurnResolutionLog? log = null, 
+        CancellationToken cancellationToken = default);
+
+    public Task NotifyPlayerDamagedAsync(
+        Guid battleId, 
+        Guid playerId, 
+        int damage, 
+        int remainingHp, 
+        int turnIndex,
+        CancellationToken cancellationToken = default);
+
     public Task NotifyBattleStateUpdatedAsync(
         Guid battleId,
         Guid playerAId,
@@ -20,7 +42,7 @@ public interface IBattleRealtimeNotifier
         Ruleset ruleset,
         string phase,
         int turnIndex,
-        DateTime deadlineUtc,
+        DateTimeOffset deadlineUtc,
         int noActionStreakBoth,
         int lastResolvedTurnIndex,
         string? endedReason,
@@ -28,7 +50,11 @@ public interface IBattleRealtimeNotifier
         int? playerAHp,
         int? playerBHp,
         CancellationToken cancellationToken = default);
-    Task NotifyBattleEndedAsync(Guid battleId, string reason, Guid? winnerPlayerId, DateTime endedAt, CancellationToken cancellationToken = default);
+
+    Task NotifyBattleEndedAsync(
+        Guid battleId, 
+        string reason, 
+        Guid? winnerPlayerId, 
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken = default);
 }
-
-

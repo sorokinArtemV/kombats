@@ -43,13 +43,13 @@ public class RedisBattleStateStore : IBattleStateStore
         _options = options.Value;
         _clock = clock;
     }
-
-    // Helper method for unix milliseconds conversion (ZSET scores and state JSON use unixMs for consistency)
-    private static long ToUnixMs(DateTime utc) => new DateTimeOffset(utc, TimeSpan.Zero).ToUnixTimeMilliseconds();
-
+    
+    /// <summary>
+    /// Helper method for unix milliseconds conversion (ZSET scores and state JSON use unixMs for consistency)
+    /// </summary>
+    private static long ToUnixMs(DateTimeOffset value) => value.ToUnixTimeMilliseconds();
     private string GetStateKey(Guid battleId) => $"{StateKeyPrefix}{battleId}";
-    private string GetActionKey(Guid battleId, int turnIndex, Guid playerId) => 
-        $"{ActionKeyPrefix}{battleId}:turn:{turnIndex}:player:{playerId}";
+    private string GetActionKey(Guid battleId, int turnIndex, Guid playerId) => $"{ActionKeyPrefix}{battleId}:turn:{turnIndex}:player:{playerId}";
     private string GetLockKey(Guid battleId, int turnIndex) => $"lock:battle:{battleId}:turn:{turnIndex}";
 
     public async Task<bool> TryInitializeBattleAsync(
@@ -58,29 +58,25 @@ public class RedisBattleStateStore : IBattleStateStore
         CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
-        var key = GetStateKey(battleId);
+        string key = GetStateKey(battleId);
 
         // Convert Domain state to Infrastructure storage model
-        var deadlineUtc = _clock.UtcNow; // ArenaOpen deadline is meaningless but consistent
-        var state = StoredStateMapper.FromDomainState(initialState, deadlineUtc, version: 1);
+        DateTimeOffset deadlineUtc = _clock.UtcNow; // ArenaOpen deadline is meaningless but consistent
+        BattleState state = StoredStateMapper.FromDomainState(initialState, deadlineUtc, version: 1);
 
         // Use SETNX for idempotent initialization
-        var json = JsonSerializer.Serialize(state);
-        var setResult = await db.StringSetAsync(key, json, when: When.NotExists);
+        string json = JsonSerializer.Serialize(state);
+        bool setResult = await db.StringSetAsync(key, json, when: When.NotExists);
 
         if (setResult)
         {
             // Add to active battles set
             await db.SetAddAsync(ActiveBattlesSetKey, battleId.ToString());
-            _logger.LogInformation(
-                "Initialized battle state for BattleId: {BattleId}, Phase: {Phase}",
-                battleId, state.Phase);
+            _logger.LogInformation("Initialized battle state for BattleId: {BattleId}, Phase: {Phase}", battleId, state.Phase);
         }
         else
         {
-            _logger.LogInformation(
-                "Battle {BattleId} already initialized, skipping (idempotent)",
-                battleId);
+            _logger.LogInformation("Battle {BattleId} already initialized, skipping (idempotent)", battleId);
         }
 
         return setResult;
@@ -96,26 +92,23 @@ public class RedisBattleStateStore : IBattleStateStore
 
         try
         {
-            var state = JsonSerializer.Deserialize<BattleState>(json.ToString());
+            BattleState? state = JsonSerializer.Deserialize<BattleState>(json.ToString());
             if (state == null)
             {
-                _logger.LogError(
-                    "Deserialized battle state is null for BattleId: {BattleId}. This indicates a serialization mismatch.",
-                    battleId);
+                _logger.LogError("Deserialized battle state is null for BattleId: {BattleId}. This indicates a serialization mismatch.", battleId);
                 throw new InvalidOperationException($"Deserialized battle state is null for BattleId: {battleId}");
             }
+            
             return StoredStateMapper.ToSnapshot(state);
         }
         catch (JsonException ex)
         {
-            _logger.LogError(ex, 
-                "Failed to deserialize battle state for BattleId: {BattleId}. JSON may be corrupted or schema changed.",
-                battleId);
+            _logger.LogError(ex, "Failed to deserialize battle state for BattleId: {BattleId}. JSON may be corrupted or schema changed.", battleId);
             throw new InvalidOperationException($"Failed to deserialize battle state for BattleId: {battleId}", ex);
         }
     }
 
-    public async Task<bool> TryOpenTurnAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default)
+    public async Task<bool> TryOpenTurnAsync(Guid battleId, int turnIndex, DateTimeOffset deadlineUtc, CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
         var key = GetStateKey(battleId);
@@ -125,8 +118,8 @@ public class RedisBattleStateStore : IBattleStateStore
 
         var result = await db.ScriptEvaluateAsync(
             RedisScripts.TryOpenTurnScript,
-            new RedisKey[] { key, DeadlinesZSetKey },
-            new RedisValue[] { turnIndex, deadlineUnixMs, battleId.ToString() });
+            [key, DeadlinesZSetKey],
+            [turnIndex, deadlineUnixMs, battleId.ToString()]);
 
         var success = (int)result == 1;
         if (success)
@@ -164,7 +157,7 @@ public class RedisBattleStateStore : IBattleStateStore
         Guid battleId,
         int currentTurnIndex,
         int nextTurnIndex,
-        DateTime nextDeadlineUtc,
+        DateTimeOffset nextDeadlineUtc,
         int noActionStreak,
         int playerAHp,
         int playerBHp,
@@ -178,8 +171,8 @@ public class RedisBattleStateStore : IBattleStateStore
 
         var result = await db.ScriptEvaluateAsync(
             RedisScripts.MarkTurnResolvedAndOpenNextScript,
-            new RedisKey[] { key, DeadlinesZSetKey },
-            new RedisValue[] { 
+            [key, DeadlinesZSetKey],
+            [
                 currentTurnIndex, 
                 nextTurnIndex, 
                 deadlineUnixMs, 
@@ -187,7 +180,7 @@ public class RedisBattleStateStore : IBattleStateStore
                 playerAHp,
                 playerBHp,
                 battleId.ToString()
-            });
+            ]);
 
         var success = (int)result == 1;
         if (success)
@@ -234,85 +227,9 @@ public class RedisBattleStateStore : IBattleStateStore
 
         return commitResult;
     }
-
-    // Deadline index methods (Redis ZSET) - Legacy/Diagnostics only
-    [Obsolete("Do not use in runtime flow; deadlines are managed by state transitions + claim. Use ClaimDueBattlesAsync for production deadline polling.")]
-    public async Task AddBattleDeadlineAsync(Guid battleId, DateTime deadlineUtc, CancellationToken cancellationToken = default)
-    {
-        var db = _redis.GetDatabase();
-        // Convert to unix milliseconds for ZSET score
-        var deadlineUnixMs = ToUnixMs(deadlineUtc);
-        
-        await db.SortedSetAddAsync(DeadlinesZSetKey, battleId.ToString(), deadlineUnixMs);
-        
-        _logger.LogInformation(
-            "Added battle deadline for BattleId: {BattleId}, DeadlineUtc: {DeadlineUtc}",
-            battleId, deadlineUtc);
-    }
-
-    [Obsolete("Do not use in runtime flow; deadlines are managed by state transitions + claim. Use ClaimDueBattlesAsync for production deadline polling.")]
-    public async Task RemoveBattleDeadlineAsync(Guid battleId, CancellationToken cancellationToken = default)
-    {
-        var db = _redis.GetDatabase();
-        
-        await db.SortedSetRemoveAsync(DeadlinesZSetKey, battleId.ToString());
-        
-        _logger.LogInformation(
-            "Removed battle deadline for BattleId: {BattleId}",
-            battleId);
-    }
-
-    [Obsolete("Legacy method - not used by production worker. Use ClaimDueBattlesAsync for production deadline polling.")]
-    public async Task<List<Guid>> GetDueBattlesAsync(DateTime nowUtc, int limit, CancellationToken cancellationToken = default)
-    {
-        var db = _redis.GetDatabase();
-        // Convert to unix milliseconds for ZSET score comparison
-        var nowUnixMs = ToUnixMs(nowUtc);
-        
-        // ZRANGEBYSCORE battle:deadlines -inf nowUnixMs LIMIT 0 limit
-        var members = await db.SortedSetRangeByScoreAsync(
-            DeadlinesZSetKey,
-            stop: nowUnixMs,
-            take: limit);
-        
-        var battleIds = new List<Guid>();
-        foreach (var member in members)
-        {
-            if (Guid.TryParse(member.ToString(), out var battleId))
-            {
-                battleIds.Add(battleId);
-            }
-        }
-        
-        return battleIds;
-    }
-
-    [Obsolete("Unsafe due to double precision; do not use. Use ClaimDueBattlesAsync tick loop in TurnDeadlineWorker.")]
-    public async Task<DateTime?> GetNextDeadlineUtcAsync(CancellationToken cancellationToken = default)
-    {
-        var db = _redis.GetDatabase();
-        
-        // ZRANGE battle:deadlines 0 0 WITHSCORES - get the first (lowest score) element with its score
-        var result = await db.SortedSetRangeByRankWithScoresAsync(
-            DeadlinesZSetKey,
-            start: 0,
-            stop: 0,
-            order: Order.Ascending);
-        
-        if (result == null || result.Length == 0)
-        {
-            return null;
-        }
-        
-        var score = result[0].Score;
-        // Score is stored as unix milliseconds (long), but Redis returns as double - potential precision loss
-        // Convert unixMs back to DateTime
-        var unixMs = (long)score;
-        return DateTimeOffset.FromUnixTimeMilliseconds(unixMs).UtcDateTime;
-    }
-
+    
     public async Task<IReadOnlyList<ClaimedBattleDue>> ClaimDueBattlesAsync(
-        DateTime nowUtc, 
+        DateTimeOffset nowUtc, 
         int limit, 
         TimeSpan leaseTtl, 
         CancellationToken cancellationToken = default)
@@ -338,23 +255,23 @@ public class RedisBattleStateStore : IBattleStateStore
                 {
                     // Results come as pairs: [battleId1, turnIndex1, battleId2, turnIndex2, ...]
                     for (int i = 0; i < results.Length; i += 2)
-                {
-                    if (i + 1 < results.Length)
                     {
-                        var battleIdStr = results[i].ToString();
-                        var turnIndexStr = results[i + 1].ToString();
-                        
-                        if (Guid.TryParse(battleIdStr, out var battleId) && 
-                            int.TryParse(turnIndexStr, out var turnIndex))
+                        if (i + 1 < results.Length)
                         {
-                            claimed.Add(new ClaimedBattleDue
+                            var battleIdStr = results[i].ToString();
+                            var turnIndexStr = results[i + 1].ToString();
+                        
+                            if (Guid.TryParse(battleIdStr, out var battleId) && 
+                                int.TryParse(turnIndexStr, out var turnIndex))
                             {
-                                BattleId = battleId,
-                                TurnIndex = turnIndex
-                            });
+                                claimed.Add(new ClaimedBattleDue
+                                {
+                                    BattleId = battleId,
+                                    TurnIndex = turnIndex
+                                });
+                            }
                         }
                     }
-                }
                 }
             }
 

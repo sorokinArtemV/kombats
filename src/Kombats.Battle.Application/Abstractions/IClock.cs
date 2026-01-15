@@ -6,10 +6,5 @@ namespace Kombats.Battle.Application.Abstractions;
 /// </summary>
 public interface IClock
 {
-    DateTime UtcNow { get; }
+    DateTimeOffset UtcNow { get; }
 }
-
-
-
-
-

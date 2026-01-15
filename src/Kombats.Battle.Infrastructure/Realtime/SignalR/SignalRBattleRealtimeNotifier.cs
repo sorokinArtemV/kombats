@@ -40,13 +40,13 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
             cancellationToken);
     }
 
-    public async Task NotifyTurnOpenedAsync(Guid battleId, int turnIndex, DateTime deadlineUtc, CancellationToken cancellationToken = default)
+    public async Task NotifyTurnOpenedAsync(Guid battleId, int turnIndex, DateTimeOffset deadlineUtc, CancellationToken cancellationToken = default)
     {
         var payload = new TurnOpenedRealtime
         {
             BattleId = battleId,
             TurnIndex = turnIndex,
-            DeadlineUtc = new DateTimeOffset(deadlineUtc.ToUniversalTime(), TimeSpan.Zero)
+            DeadlineUtc = deadlineUtc
         };
 
         await _hubContext.Clients.Group($"battle:{battleId}").SendAsync(
@@ -96,7 +96,7 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
         Ruleset ruleset,
         string phase,
         int turnIndex,
-        DateTime deadlineUtc,
+        DateTimeOffset deadlineUtc,
         int noActionStreakBoth,
         int lastResolvedTurnIndex,
         string? endedReason,
@@ -113,7 +113,7 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
             Ruleset = RealtimeContractMapper.ToRealtimeRuleset(ruleset),
             Phase = RealtimeContractMapper.ToRealtimePhase(phase, _logger),
             TurnIndex = turnIndex,
-            DeadlineUtc = new DateTimeOffset(deadlineUtc.ToUniversalTime(), TimeSpan.Zero),
+            DeadlineUtc = deadlineUtc,
             NoActionStreakBoth = noActionStreakBoth,
             LastResolvedTurnIndex = lastResolvedTurnIndex,
             EndedReason = RealtimeContractMapper.ToRealtimeEndReason(endedReason, _logger),
@@ -128,7 +128,7 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
             cancellationToken);
     }
 
-    public async Task NotifyBattleEndedAsync(Guid battleId, string reason, Guid? winnerPlayerId, DateTime endedAt, CancellationToken cancellationToken = default)
+    public async Task NotifyBattleEndedAsync(Guid battleId, string reason, Guid? winnerPlayerId, DateTimeOffset endedAt, CancellationToken cancellationToken = default)
     {
         var endReason = RealtimeContractMapper.ToRealtimeEndReason(reason, _logger) 
                        ?? BattleEndReasonRealtime.Unknown;
@@ -138,7 +138,7 @@ public class SignalRBattleRealtimeNotifier : IBattleRealtimeNotifier
             BattleId = battleId,
             Reason = endReason,
             WinnerPlayerId = winnerPlayerId,
-            EndedAt = new DateTimeOffset(endedAt.ToUniversalTime(), TimeSpan.Zero)
+            EndedAt = endedAt
         };
 
         await _hubContext.Clients.Group($"battle:{battleId}").SendAsync(

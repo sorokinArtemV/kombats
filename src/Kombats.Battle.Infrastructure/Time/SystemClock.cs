@@ -8,7 +8,7 @@ namespace Kombats.Battle.Infrastructure.Time;
 /// </summary>
 public class SystemClock : IClock
 {
-    public DateTime UtcNow => DateTime.UtcNow;
+    public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
 }
 
 

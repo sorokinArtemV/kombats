@@ -13,7 +13,7 @@ public interface IBattleEventPublisher
         Guid matchId,
         EndBattleReason reason,
         Guid? winnerPlayerId,
-        DateTime endedAt,
+        DateTimeOffset endedAt,
         CancellationToken cancellationToken = default);
 }
 

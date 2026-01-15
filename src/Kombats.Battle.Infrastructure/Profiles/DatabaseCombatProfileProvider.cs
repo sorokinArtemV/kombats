@@ -1,5 +1,5 @@
 using Kombats.Battle.Application.Abstractions;
-using Kombats.Battle.Infrastructure.Persistence.EF.DbContext;
+using Kombats.Battle.Infrastructure.Data.DbContext;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -55,5 +55,3 @@ public class DatabaseCombatProfileProvider : ICombatProfileProvider
         return new CombatProfile(profile.PlayerId, profile.Strength, profile.Stamina, agility, intuition);
     }
 }
-
-

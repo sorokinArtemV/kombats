@@ -11,11 +11,6 @@ public sealed class PlayerStats
     public int Agility { get; init; }
     public int Intuition { get; init; }
 
-    public PlayerStats(int strength, int stamina)
-        : this(strength, stamina, 0, 0)
-    {
-    }
-
     public PlayerStats(int strength, int stamina, int agility, int intuition)
     {
         if (strength < 0)
