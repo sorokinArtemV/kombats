@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Matchmaking.Api", "Kombats.Matchmaking.Api\Kombats.Matchmaking.Api.csproj", "{05F89C71-E4DF-4FE9-982D-6EDBDDFA08C3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Matchmaking.Application", "Kombats.Matchmaking.Application\Kombats.Matchmaking.Application.csproj", "{AF8C61CD-A762-4F53-95CC-8BB3AE986E0F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Matchmaking.Domain", "Kombats.Matchmaking.Domain\Kombats.Matchmaking.Domain.csproj", "{A13ADF8B-AB52-45C2-9886-FC2B240F0340}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Matchmaking.Infrastructure", "Kombats.Matchmaking.Infrastructure\Kombats.Matchmaking.Infrastructure.csproj", "{4C744B2E-040C-46E3-A4E0-C04428C7E77A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Matchmaking.Contracts", "Kombats.Matchmaking.Contracts\Kombats.Matchmaking.Contracts.csproj", "{1FD9DCF4-7009-4D92-989F-358963489CCD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{05F89C71-E4DF-4FE9-982D-6EDBDDFA08C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{05F89C71-E4DF-4FE9-982D-6EDBDDFA08C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{05F89C71-E4DF-4FE9-982D-6EDBDDFA08C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{05F89C71-E4DF-4FE9-982D-6EDBDDFA08C3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AF8C61CD-A762-4F53-95CC-8BB3AE986E0F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AF8C61CD-A762-4F53-95CC-8BB3AE986E0F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AF8C61CD-A762-4F53-95CC-8BB3AE986E0F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AF8C61CD-A762-4F53-95CC-8BB3AE986E0F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A13ADF8B-AB52-45C2-9886-FC2B240F0340}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A13ADF8B-AB52-45C2-9886-FC2B240F0340}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A13ADF8B-AB52-45C2-9886-FC2B240F0340}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A13ADF8B-AB52-45C2-9886-FC2B240F0340}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4C744B2E-040C-46E3-A4E0-C04428C7E77A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4C744B2E-040C-46E3-A4E0-C04428C7E77A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4C744B2E-040C-46E3-A4E0-C04428C7E77A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4C744B2E-040C-46E3-A4E0-C04428C7E77A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1FD9DCF4-7009-4D92-989F-358963489CCD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1FD9DCF4-7009-4D92-989F-358963489CCD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1FD9DCF4-7009-4D92-989F-358963489CCD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1FD9DCF4-7009-4D92-989F-358963489CCD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
