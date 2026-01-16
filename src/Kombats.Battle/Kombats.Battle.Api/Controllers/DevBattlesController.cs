@@ -1,6 +1,5 @@
 using Kombats.Contracts.Battle;
 using MassTransit;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kombats.Battle.Api.Controllers;
