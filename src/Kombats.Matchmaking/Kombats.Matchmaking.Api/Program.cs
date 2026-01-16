@@ -1,41 +1,105 @@
+using Combats.Infrastructure.Messaging.DependencyInjection;
+using Kombats.Contracts.Battle;
+using Kombats.Matchmaking.Api.Controllers;
+using Kombats.Matchmaking.Api.Workers;
+using Kombats.Matchmaking.Application.Abstractions;
+using Kombats.Matchmaking.Application.UseCases;
+using Kombats.Matchmaking.Infrastructure.Data;
+using Kombats.Matchmaking.Infrastructure.Messaging.Consumers;
+using Kombats.Matchmaking.Infrastructure.Options;
+using Kombats.Matchmaking.Infrastructure.Redis;
+using Microsoft.EntityFrameworkCore;
+using Serilog;
+using StackExchange.Redis;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+builder.Host.UseSerilog((context, services, loggerConfiguration) =>
+{
+    loggerConfiguration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext();
+});
+
+// Add services to the container
+builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+
+// Configure PostgreSQL DbContext for Matchmaking service
+builder.Services.AddDbContext<MatchmakingDbContext>(options =>
+{
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+                           ?? throw new InvalidOperationException("DefaultConnection connection string is required");
+    options.UseNpgsql(connectionString);
+});
+
+// Configure Redis
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
+
+// Configure Matchmaking Redis options
+builder.Services.Configure<MatchmakingRedisOptions>(
+    builder.Configuration.GetSection(MatchmakingRedisOptions.SectionName));
+
+// Configure Matchmaking Worker options
+builder.Services.Configure<MatchmakingWorkerOptions>(
+    builder.Configuration.GetSection(MatchmakingWorkerOptions.SectionName));
+
+// Configure Match Timeout Worker options
+builder.Services.Configure<MatchTimeoutWorkerOptions>(
+    builder.Configuration.GetSection(MatchTimeoutWorkerOptions.SectionName));
+
+// Register Application ports (implemented by Infrastructure)
+builder.Services.AddScoped<IMatchQueueStore, RedisMatchQueueStore>();
+builder.Services.AddScoped<IPlayerMatchStatusStore, RedisPlayerMatchStatusStore>();
+builder.Services.AddScoped<IMatchRepository, MatchRepository>();
+
+// Register Application services
+builder.Services.AddScoped<QueueService>();
+builder.Services.AddScoped<MatchmakingService>();
+
+// Configure messaging with typed DbContext for outbox/inbox support
+builder.Services.AddMessaging<MatchmakingDbContext>(
+    builder.Configuration,
+    "matchmaking",
+    x =>
+    {
+        x.AddConsumer<BattleCreatedConsumer>();
+    },
+    messagingBuilder =>
+    {
+        // Register entity name mappings
+        messagingBuilder.Map<CreateBattle>("CreateBattle");
+        messagingBuilder.Map<BattleCreated>("BattleCreated");
+    });
+
+// Register background workers
+builder.Services.AddHostedService<MatchmakingWorker>();
+builder.Services.AddHostedService<MatchTimeoutWorker>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+app.UseSerilogRequestLogging();
+
+// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
+app.UseRouting();
+app.UseAuthorization();
+app.MapControllers();
 
-var summaries = new[]
+// Ensure database is created/migrated
+using (var scope = app.Services.CreateScope())
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    var dbContext = scope.ServiceProvider.GetRequiredService<MatchmakingDbContext>();
 
-app.MapGet("/weatherforecast", () =>
-    {
-        var forecast = Enumerable.Range(1, 5).Select(index =>
-                new WeatherForecast
-                (
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                    Random.Shared.Next(-20, 55),
-                    summaries[Random.Shared.Next(summaries.Length)]
-                ))
-            .ToArray();
-        return forecast;
-    })
-    .WithName("GetWeatherForecast");
+    // Apply migrations for MatchmakingDbContext (includes matches table)
+    await dbContext.Database.MigrateAsync();
+}
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

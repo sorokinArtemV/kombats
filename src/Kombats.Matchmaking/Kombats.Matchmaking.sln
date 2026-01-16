@@ -10,6 +10,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Matchmaking.Infrast
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Matchmaking.Contracts", "Kombats.Matchmaking.Contracts\Kombats.Matchmaking.Contracts.csproj", "{1FD9DCF4-7009-4D92-989F-358963489CCD}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Kombats.Common", "Kombats.Common", "{F75626BD-7D40-43B4-9B97-F3FD9F9A485F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Infrastructure.Messaging", "..\Kombats.Common\Kombats.Infrastructure.Messaging\Kombats.Infrastructure.Messaging.csproj", "{F38C0721-6357-4DA5-B9F9-06F160C2F420}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -36,5 +40,12 @@ Global
 		{1FD9DCF4-7009-4D92-989F-358963489CCD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1FD9DCF4-7009-4D92-989F-358963489CCD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1FD9DCF4-7009-4D92-989F-358963489CCD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F38C0721-6357-4DA5-B9F9-06F160C2F420}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F38C0721-6357-4DA5-B9F9-06F160C2F420}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F38C0721-6357-4DA5-B9F9-06F160C2F420}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F38C0721-6357-4DA5-B9F9-06F160C2F420}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{F38C0721-6357-4DA5-B9F9-06F160C2F420} = {F75626BD-7D40-43B4-9B97-F3FD9F9A485F}
 	EndGlobalSection
 EndGlobal

@@ -4,10 +4,24 @@
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
+        <LangVersion>latest</LangVersion>
     </PropertyGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\Kombats.Matchmaking.Application\Kombats.Matchmaking.Application.csproj"/>
+        <ProjectReference Include="..\Kombats.Matchmaking.Infrastructure\Kombats.Matchmaking.Infrastructure.csproj"/>
+        <ProjectReference Include="..\..\Kombats.Common\Kombats.Infrastructure.Messaging\Kombats.Infrastructure.Messaging.csproj"/>
+        <ProjectReference Include="..\..\Kombats.Battle\Kombats.Contracts\Kombats.Contracts.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1"/>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.2">
+          <PrivateAssets>all</PrivateAssets>
+          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="StackExchange.Redis" Version="2.8.16"/>
+        <PackageReference Include="Serilog.AspNetCore" Version="8.0.3"/>
     </ItemGroup>
 
 </Project>
