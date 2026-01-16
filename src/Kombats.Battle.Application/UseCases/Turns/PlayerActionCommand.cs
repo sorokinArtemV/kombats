@@ -42,6 +42,20 @@ public sealed record PlayerActionCommand
     /// True if this is a NoAction (no valid action submitted).
     /// </summary>
     public bool IsNoAction => Quality != ActionQuality.Valid || AttackZone == null;
+
+    /// <summary>
+    /// Validates the invariant: if Quality == Valid, then AttackZone must be non-null.
+    /// Throws InvalidOperationException if invariant is violated.
+    /// </summary>
+    public void ValidateInvariant()
+    {
+        if (Quality == ActionQuality.Valid && AttackZone == null)
+        {
+            throw new InvalidOperationException(
+                $"Invariant violation: Quality is {Quality} but AttackZone is null. " +
+                $"BattleId: {BattleId}, PlayerId: {PlayerId}, TurnIndex: {TurnIndex}");
+        }
+    }
 }
 
 /// <summary>
@@ -89,6 +103,7 @@ public enum ActionRejectReason
     WrongPhase,
     WrongTurnIndex,
     DeadlinePassed,
-    MissingAttackZone
+    MissingAttackZone,
+    InvariantViolation
 }
 

@@ -243,6 +243,64 @@ internal static class RedisScripts
         
         return claimed
     ";
+
+    /// <summary>
+    /// Stores an action atomically and checks if both players have submitted actions.
+    /// Uses first-write-wins semantics (SET NX) for each player's action.
+    /// 
+    /// KEYS[1] = action key for current player (battle:action:{battleId}:turn:{turnIndex}:player:{playerId})
+    /// KEYS[2] = submission marker key (battle:turn:{battleId}:{turnIndex}:submitted)
+    /// ARGV[1] = serialized action JSON
+    /// ARGV[2] = TTL seconds (integer)
+    /// ARGV[3] = player role indicator ("A" or "B") or bit index (0 for A, 1 for B)
+    /// 
+    /// Returns: Array [AlreadySubmitted (0/1), BothSubmitted (0/1), WasStored (0/1)]
+    /// - AlreadySubmitted: 1 if this player already submitted (action key exists), 0 otherwise
+    /// - BothSubmitted: 1 if both players have submitted, 0 otherwise
+    /// - WasStored: 1 if action was stored in this call, 0 otherwise
+    /// </summary>
+    internal const string StoreActionAndCheckBothSubmittedScript = @"
+        local actionKey = KEYS[1]
+        local submittedKey = KEYS[2]
+        local actionJson = ARGV[1]
+        local ttlSeconds = tonumber(ARGV[2])
+        local playerRole = ARGV[3]
+        
+        -- Check if action already exists (first-write-wins check)
+        local existingAction = redis.call('GET', actionKey)
+        local alreadySubmitted = 0
+        local wasStored = 0
+        
+        if existingAction then
+            alreadySubmitted = 1
+        else
+            -- Store action with TTL (SET NX ensures first-write-wins)
+            local setResult = redis.call('SET', actionKey, actionJson, 'NX', 'EX', ttlSeconds)
+            if setResult then
+                wasStored = 1
+                -- Mark this player as submitted in the submission marker
+                -- Use HSET to track both players atomically
+                redis.call('HSET', submittedKey, playerRole, '1')
+            end
+        end
+        
+        -- Always refresh TTL on submission marker if it exists (to prevent premature expiration)
+        -- This ensures the marker lives as long as the actions
+        if redis.call('EXISTS', submittedKey) == 1 then
+            redis.call('EXPIRE', submittedKey, ttlSeconds)
+        end
+        
+        -- Check if both players have submitted
+        local bothSubmitted = 0
+        local playerA = redis.call('HGET', submittedKey, 'A')
+        local playerB = redis.call('HGET', submittedKey, 'B')
+        
+        if playerA == '1' and playerB == '1' then
+            bothSubmitted = 1
+        end
+        
+        return {alreadySubmitted, bothSubmitted, wasStored}
+    ";
 }
 
 

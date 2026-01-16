@@ -42,7 +42,7 @@ public class ActionIntakeService : IActionIntake
         // Step 2: Payload validation (empty/whitespace)
         if (string.IsNullOrWhiteSpace(rawPayload))
         {
-            _logger.LogInformation(
+            _logger.LogDebug(
                 "Empty action payload for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}. Treating as NoAction.",
                 battleId, clientTurnIndex, playerId);
             return CreateNoAction(battleId, playerId, battleState.TurnIndex, ActionRejectReason.EmptyPayload);
@@ -56,7 +56,7 @@ public class ActionIntakeService : IActionIntake
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(
+            _logger.LogDebug(
                 ex,
                 "Invalid JSON in action payload for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}. Treating as NoAction.",
                 battleId, clientTurnIndex, playerId);
@@ -135,8 +135,16 @@ public class ActionIntakeService : IActionIntake
                 }
             }
 
-            // Valid action
-            return new PlayerActionCommand
+            // Valid action - enforce invariant: Quality == Valid => AttackZone != null
+            if (attackZone == null)
+            {
+                _logger.LogError(
+                    "Invariant violation: Attempted to create Valid action with null AttackZone for BattleId: {BattleId}, PlayerId: {PlayerId}, TurnIndex: {TurnIndex}. Converting to Invalid.",
+                    battleId, playerId, battleState.TurnIndex);
+                return CreateNoAction(battleId, playerId, battleState.TurnIndex, ActionRejectReason.InvariantViolation);
+            }
+
+            var command = new PlayerActionCommand
             {
                 BattleId = battleId,
                 PlayerId = playerId,
@@ -147,6 +155,10 @@ public class ActionIntakeService : IActionIntake
                 Quality = ActionQuality.Valid,
                 RejectReason = null
             };
+            
+            // Validate invariant before returning
+            command.ValidateInvariant();
+            return command;
         }
     }
 
@@ -159,7 +171,7 @@ public class ActionIntakeService : IActionIntake
         // Validate phase: must be TurnOpen
         if (state.Phase != BattlePhase.TurnOpen)
         {
-            _logger.LogWarning(
+            _logger.LogDebug(
                 "Invalid phase for action submission: BattleId: {BattleId}, Phase: {Phase}, PlayerId: {PlayerId}, TurnIndex: {TurnIndex}",
                 state.BattleId, state.Phase, playerId, clientTurnIndex);
             return CreateNoAction(state.BattleId, playerId, state.TurnIndex, ActionRejectReason.WrongPhase);
@@ -168,7 +180,7 @@ public class ActionIntakeService : IActionIntake
         // Validate turn index matches
         if (state.TurnIndex != clientTurnIndex)
         {
-            _logger.LogWarning(
+            _logger.LogDebug(
                 "TurnIndex mismatch for action submission: BattleId: {BattleId}, Expected: {ExpectedTurnIndex}, Received: {ReceivedTurnIndex}, PlayerId: {PlayerId}",
                 state.BattleId, state.TurnIndex, clientTurnIndex, playerId);
             return CreateNoAction(state.BattleId, playerId, state.TurnIndex, ActionRejectReason.WrongTurnIndex);
@@ -177,7 +189,7 @@ public class ActionIntakeService : IActionIntake
         // Validate deadline hasn't passed (with small buffer for network latency)
         if (_clock.UtcNow > state.DeadlineUtc.AddSeconds(1))
         {
-            _logger.LogWarning(
+            _logger.LogDebug(
                 "Deadline passed for action submission: BattleId: {BattleId}, TurnIndex: {TurnIndex}, DeadlineUtc: {DeadlineUtc}, PlayerId: {PlayerId}",
                 state.BattleId, clientTurnIndex, state.DeadlineUtc, playerId);
             return CreateNoAction(state.BattleId, playerId, state.TurnIndex, ActionRejectReason.DeadlinePassed);
@@ -200,6 +212,7 @@ public class ActionIntakeService : IActionIntake
             ActionRejectReason.EmptyPayload => ActionQuality.NoAction,
             ActionRejectReason.DeadlinePassed => ActionQuality.Late,
             ActionRejectReason.WrongPhase or ActionRejectReason.WrongTurnIndex => ActionQuality.ProtocolViolation,
+            ActionRejectReason.InvariantViolation => ActionQuality.Invalid,
             _ => ActionQuality.Invalid
         };
 

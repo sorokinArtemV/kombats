@@ -80,6 +80,28 @@ public interface IBattleStateStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Stores an action atomically and checks if both players have submitted actions.
+    /// This is an optimization to avoid the extra GetActionsAsync roundtrip after storing.
+    /// Uses first-write-wins semantics (SET NX in Redis) for each player's action.
+    /// </summary>
+    /// <param name="battleId">Battle identifier</param>
+    /// <param name="turnIndex">Turn index</param>
+    /// <param name="playerId">Player identifier</param>
+    /// <param name="playerAId">Player A identifier (for role determination)</param>
+    /// <param name="playerBId">Player B identifier (for role determination)</param>
+    /// <param name="actionCommand">Canonical action command to store</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Result containing store status and whether both players have submitted</returns>
+    Task<ActionStoreAndCheckResult> StoreActionAndCheckBothSubmittedAsync(
+        Guid battleId,
+        int turnIndex,
+        Guid playerId,
+        Guid playerAId,
+        Guid playerBId,
+        PlayerActionCommand actionCommand,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Retrieves canonical action commands for both players in a specific turn.
     /// Returns null for a player if no action was stored.
     /// </summary>

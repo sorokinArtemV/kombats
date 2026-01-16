@@ -30,6 +30,17 @@ public class RedisBattleStateStore : IBattleStateStore
     private const string ActiveBattlesSetKey = "battle:active";
     private const string DeadlinesZSetKey = "battle:deadlines";
 
+    /// <summary>
+    /// Centralized JSON serializer options for PlayerActionCommand.
+    /// Uses camelCase for writes and case-insensitive reads for backward compatibility.
+    /// </summary>
+    private static readonly JsonSerializerOptions PlayerActionCommandJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = false
+    };
+
     // ClaimDueBattles script constants (passed as ARGV)
     private const int SmallDelayMs = 200; // Delay for non-TurnOpen phases
 
@@ -52,6 +63,7 @@ public class RedisBattleStateStore : IBattleStateStore
     private string GetStateKey(Guid battleId) => $"{StateKeyPrefix}{battleId}";
     private string GetActionKey(Guid battleId, int turnIndex, Guid playerId) => $"{ActionKeyPrefix}{battleId}:turn:{turnIndex}:player:{playerId}";
     private string GetLockKey(Guid battleId, int turnIndex) => $"lock:battle:{battleId}:turn:{turnIndex}";
+    private string GetSubmissionMarkerKey(Guid battleId, int turnIndex) => $"battle:turn:{battleId}:{turnIndex}:submitted";
 
     public async Task<bool> TryInitializeBattleAsync(
         Guid battleId, 
@@ -316,11 +328,8 @@ public class RedisBattleStateStore : IBattleStateStore
         var db = _redis.GetDatabase();
         var key = GetActionKey(battleId, turnIndex, playerId);
 
-        // Serialize canonical action to JSON
-        var serializedAction = JsonSerializer.Serialize(actionCommand, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
+        // Serialize canonical action to JSON using centralized options
+        var serializedAction = JsonSerializer.Serialize(actionCommand, PlayerActionCommandJsonOptions);
 
         // Store action with configurable expiration (cleanup after battle ends)
         // Use SET NX (When.NotExists) to ensure first-write-wins
@@ -361,39 +370,214 @@ public class RedisBattleStateStore : IBattleStateStore
 
         if (actionAValue.HasValue)
         {
-            try
-            {
-                playerAAction = JsonSerializer.Deserialize<PlayerActionCommand>(
-                    actionAValue.ToString(),
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex,
-                    "Failed to deserialize action for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}",
-                    battleId, turnIndex, playerAId);
-                // Return null if deserialization fails (should not happen with canonical format)
-            }
+            playerAAction = DeserializeActionWithLegacySupport(
+                actionAValue.ToString(),
+                battleId,
+                turnIndex,
+                playerAId,
+                "PlayerA");
         }
 
         if (actionBValue.HasValue)
         {
-            try
-            {
-                playerBAction = JsonSerializer.Deserialize<PlayerActionCommand>(
-                    actionBValue.ToString(),
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex,
-                    "Failed to deserialize action for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}",
-                    battleId, turnIndex, playerBId);
-                // Return null if deserialization fails (should not happen with canonical format)
-            }
+            playerBAction = DeserializeActionWithLegacySupport(
+                actionBValue.ToString(),
+                battleId,
+                turnIndex,
+                playerBId,
+                "PlayerB");
         }
 
         return (playerAAction, playerBAction);
+    }
+
+    public async Task<ActionStoreAndCheckResult> StoreActionAndCheckBothSubmittedAsync(
+        Guid battleId,
+        int turnIndex,
+        Guid playerId,
+        Guid playerAId,
+        Guid playerBId,
+        PlayerActionCommand actionCommand,
+        CancellationToken cancellationToken = default)
+    {
+        var db = _redis.GetDatabase();
+        var actionKey = GetActionKey(battleId, turnIndex, playerId);
+        var submissionMarkerKey = GetSubmissionMarkerKey(battleId, turnIndex);
+
+        // Determine player role ("A" or "B")
+        var playerRole = playerId == playerAId ? "A" : (playerId == playerBId ? "B" : throw new InvalidOperationException($"Player {playerId} is not a participant in battle {battleId}"));
+
+        // Serialize canonical action to JSON using centralized options
+        var serializedAction = JsonSerializer.Serialize(actionCommand, PlayerActionCommandJsonOptions);
+
+        // Convert TTL to seconds (Redis EX expects seconds)
+        var ttlSeconds = (int)_options.ActionTtl.TotalSeconds;
+
+        try
+        {
+            var result = await db.ScriptEvaluateAsync(
+                RedisScripts.StoreActionAndCheckBothSubmittedScript,
+                [actionKey, submissionMarkerKey],
+                [serializedAction, ttlSeconds, playerRole]);
+
+            if (result.IsNull)
+            {
+                _logger.LogError(
+                    "StoreActionAndCheckBothSubmittedScript returned null for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}",
+                    battleId, turnIndex, playerId);
+                throw new InvalidOperationException("Redis script returned null result");
+            }
+
+            var results = (RedisValue[]?)result;
+            if (results == null || results.Length < 3)
+            {
+                _logger.LogError(
+                    "StoreActionAndCheckBothSubmittedScript returned invalid result format for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}",
+                    battleId, turnIndex, playerId);
+                throw new InvalidOperationException("Redis script returned invalid result format");
+            }
+
+            var alreadySubmitted = (int)results[0] == 1;
+            var bothSubmitted = (int)results[1] == 1;
+            var wasStored = (int)results[2] == 1;
+
+            var storeResult = alreadySubmitted ? ActionStoreResult.AlreadySubmitted : ActionStoreResult.Accepted;
+
+            if (wasStored)
+            {
+                _logger.LogDebug(
+                    "Stored action atomically for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}, Quality: {Quality}, BothSubmitted: {BothSubmitted}",
+                    battleId, turnIndex, playerId, actionCommand.Quality, bothSubmitted);
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "Action already submitted for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}, BothSubmitted: {BothSubmitted}",
+                    battleId, turnIndex, playerId, bothSubmitted);
+            }
+
+            return new ActionStoreAndCheckResult
+            {
+                StoreResult = storeResult,
+                BothSubmitted = bothSubmitted,
+                WasStored = wasStored
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error in StoreActionAndCheckBothSubmittedAsync for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}",
+                battleId, turnIndex, playerId);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Deserializes an action with backward compatibility for legacy formats.
+    /// First attempts to deserialize as canonical PlayerActionCommand.
+    /// If that fails, attempts to parse as legacy format and converts to NoAction.
+    /// </summary>
+    private PlayerActionCommand? DeserializeActionWithLegacySupport(
+        string storedValue,
+        Guid battleId,
+        int turnIndex,
+        Guid playerId,
+        string playerLabel)
+    {
+        // First attempt: deserialize as canonical PlayerActionCommand
+        try
+        {
+            var command = JsonSerializer.Deserialize<PlayerActionCommand>(
+                storedValue,
+                PlayerActionCommandJsonOptions);
+            
+            if (command != null)
+            {
+                // Validate invariant
+                try
+                {
+                    command.ValidateInvariant();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    _logger.LogError(ex,
+                        "Stored action violates invariant for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}. Converting to NoAction.",
+                        battleId, turnIndex, playerId);
+                    // Convert to NoAction with InvariantViolation
+                    return new PlayerActionCommand
+                    {
+                        BattleId = battleId,
+                        PlayerId = playerId,
+                        TurnIndex = turnIndex,
+                        AttackZone = null,
+                        BlockZonePrimary = null,
+                        BlockZoneSecondary = null,
+                        Quality = ActionQuality.Invalid,
+                        RejectReason = ActionRejectReason.InvariantViolation
+                    };
+                }
+                return command;
+            }
+        }
+        catch (JsonException)
+        {
+            // Not valid canonical JSON - try legacy format handling
+        }
+
+        // Second attempt: legacy format - try to parse as simple JSON with attackZone
+        // This handles cases where old format stored raw client payload
+        try
+        {
+            using var doc = JsonDocument.Parse(storedValue);
+            var root = doc.RootElement;
+            
+            // If it looks like a legacy action payload (has attackZone property), 
+            // treat as corrupted and return NoAction
+            if (root.TryGetProperty("attackZone", out _))
+            {
+                _logger.LogError(
+                    "Legacy action format detected for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}. " +
+                    "Stored value appears to be raw client payload. Converting to NoAction with CorruptedStoredAction reason.",
+                    battleId, turnIndex, playerId);
+                
+                // Return NoAction - we can't safely convert without battle state for full validation
+                // This preserves gameplay: missing/corrupted actions become NoAction
+                return new PlayerActionCommand
+                {
+                    BattleId = battleId,
+                    PlayerId = playerId,
+                    TurnIndex = turnIndex,
+                    AttackZone = null,
+                    BlockZonePrimary = null,
+                    BlockZoneSecondary = null,
+                    Quality = ActionQuality.Invalid,
+                    RejectReason = ActionRejectReason.InvalidJson // Use InvalidJson as closest match
+                };
+            }
+        }
+        catch (JsonException)
+        {
+            // Not valid JSON at all
+        }
+
+        // Final fallback: completely unparseable - treat as corrupted
+        _logger.LogError(
+            "Failed to deserialize stored action (corrupted or legacy format) for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}. " +
+            "Stored value: {StoredValue}. Converting to NoAction.",
+            battleId, turnIndex, playerId, storedValue.Length > 100 ? storedValue.Substring(0, 100) + "..." : storedValue);
+        
+        // Return NoAction to preserve gameplay semantics
+        return new PlayerActionCommand
+        {
+            BattleId = battleId,
+            PlayerId = playerId,
+            TurnIndex = turnIndex,
+            AttackZone = null,
+            BlockZonePrimary = null,
+            BlockZoneSecondary = null,
+            Quality = ActionQuality.Invalid,
+            RejectReason = ActionRejectReason.InvalidJson
+        };
     }
 }
 

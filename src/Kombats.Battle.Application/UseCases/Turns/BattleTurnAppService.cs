@@ -51,7 +51,7 @@ public class BattleTurnAppService
         string? actionPayload,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation(
+        _logger.LogDebug(
             "Submitting action for BattleId: {BattleId}, PlayerId: {PlayerId}, TurnIndex: {TurnIndex}",
             battleId, playerId, clientTurnIndex);
 
@@ -82,6 +82,7 @@ public class BattleTurnAppService
         }
 
         // Process action through intake pipeline (parses JSON, validates protocol and semantics)
+        // ActionIntakeService is the single source of truth for all protocol validation
         var canonicalAction = _actionIntake.ProcessAction(
             battleId,
             playerId,
@@ -89,46 +90,47 @@ public class BattleTurnAppService
             actionPayload,
             state);
 
-        // Store canonical action for current server turn index (first-write-wins)
-        var storeResult = await _stateStore.StoreActionAsync(battleId, state.TurnIndex, playerId, canonicalAction, cancellationToken);
+        // Store canonical action atomically and check if both players have submitted
+        // This eliminates the extra GetActionsAsync roundtrip
+        var storeAndCheckResult = await _stateStore.StoreActionAndCheckBothSubmittedAsync(
+            battleId,
+            state.TurnIndex,
+            playerId,
+            state.PlayerAId,
+            state.PlayerBId,
+            canonicalAction,
+            cancellationToken);
 
-        if (storeResult == ActionStoreResult.Accepted)
+        if (storeAndCheckResult.WasStored)
         {
-            _logger.LogInformation(
-                "Action stored for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}, Quality: {Quality}, IsNoAction: {IsNoAction}",
-                battleId, state.TurnIndex, playerId, canonicalAction.Quality, canonicalAction.IsNoAction);
+            _logger.LogDebug(
+                "Action stored for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}, Quality: {Quality}, IsNoAction: {IsNoAction}, BothSubmitted: {BothSubmitted}",
+                battleId, state.TurnIndex, playerId, canonicalAction.Quality, canonicalAction.IsNoAction, storeAndCheckResult.BothSubmitted);
         }
         else
         {
-            _logger.LogInformation(
-                "Action already submitted for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}. Skipping duplicate submission.",
-                battleId, state.TurnIndex, playerId);
+            _logger.LogDebug(
+                "Action already submitted for BattleId: {BattleId}, TurnIndex: {TurnIndex}, PlayerId: {PlayerId}, BothSubmitted: {BothSubmitted}. Skipping duplicate submission.",
+                battleId, state.TurnIndex, playerId, storeAndCheckResult.BothSubmitted);
         }
 
         // Early resolution optimization: if both players have actions, try to resolve immediately
         // This is best-effort; if CAS fails, deadline worker will handle it
-        try
+        if (storeAndCheckResult.BothSubmitted)
         {
-            var (playerAAction, playerBAction) = await _stateStore.GetActionsAsync(
-                battleId,
-                state.TurnIndex,
-                state.PlayerAId,
-                state.PlayerBId,
-                cancellationToken);
-
-            if (playerAAction != null && playerBAction != null)
+            try
             {
                 // Both actions present - try early resolution
                 // ResolveTurnAsync uses CAS, so it's safe to call even if another thread/worker is resolving
                 await ResolveTurnAsync(battleId, cancellationToken);
             }
-        }
-        catch (Exception ex)
-        {
-            // Don't fail action submission if early resolution fails
-            _logger.LogWarning(ex,
-                "Early turn resolution failed for BattleId: {BattleId}, TurnIndex: {TurnIndex}. Deadline worker will handle it.",
-                battleId, state.TurnIndex);
+            catch (Exception ex)
+            {
+                // Don't fail action submission if early resolution fails
+                _logger.LogDebug(ex,
+                    "Early turn resolution failed for BattleId: {BattleId}, TurnIndex: {TurnIndex}. Deadline worker will handle it.",
+                    battleId, state.TurnIndex);
+            }
         }
     }
 

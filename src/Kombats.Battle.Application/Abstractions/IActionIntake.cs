@@ -1,4 +1,6 @@
-namespace Kombats.Battle.Application.UseCases.Turns;
+using Kombats.Battle.Application.UseCases.Turns;
+
+namespace Kombats.Battle.Application.Abstractions;
 
 /// <summary>
 /// Service for processing raw action payloads into canonical action representations.
