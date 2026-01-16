@@ -132,33 +132,8 @@ public class MatchmakingService
     }
 }
 
-/// <summary>
-/// Result of matchmaking tick operation.
-/// </summary>
-public class MatchCreatedResult
-{
-    public required MatchCreatedResultType Type { get; init; }
-    public MatchCreatedInfo? MatchInfo { get; init; }
-
-    public static MatchCreatedResult NoMatch => new() { Type = MatchCreatedResultType.NoMatch };
-    public static MatchCreatedResult MatchCreated(MatchCreatedInfo matchInfo) => new()
-    {
-        Type = MatchCreatedResultType.MatchCreated,
-        MatchInfo = matchInfo
-    };
-}
-
 public enum MatchCreatedResultType
 {
     NoMatch,
     MatchCreated
 }
-
-public class MatchCreatedInfo
-{
-    public required Guid MatchId { get; init; }
-    public required Guid BattleId { get; init; }
-    public required Guid PlayerAId { get; init; }
-    public required Guid PlayerBId { get; init; }
-}
-

@@ -1,4 +1,4 @@
-namespace Kombats.Matchmaking.Infrastructure.Data.Entities;
+namespace Kombats.Matchmaking.Infrastructure.Entities;
 
 /// <summary>
 /// EF Core entity for outbox message storage (transactional outbox pattern).
@@ -26,4 +26,5 @@ public enum OutboxMessageStatus
     Published = 1,
     Failed = 2
 }
+
 

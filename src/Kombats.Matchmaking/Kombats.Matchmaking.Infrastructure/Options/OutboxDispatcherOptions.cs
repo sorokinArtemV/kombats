@@ -38,3 +38,4 @@ public class OutboxDispatcherOptions
     public string CreateBattleQueueName { get; set; } = "queue:battle.create-battle";
 }
 
+

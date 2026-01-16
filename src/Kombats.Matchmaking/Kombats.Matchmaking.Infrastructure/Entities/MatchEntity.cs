@@ -1,4 +1,4 @@
-namespace Kombats.Matchmaking.Infrastructure.Data.Entities;
+namespace Kombats.Matchmaking.Infrastructure.Entities;
 
 /// <summary>
 /// EF Core entity for Match storage.

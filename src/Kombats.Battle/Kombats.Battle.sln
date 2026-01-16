@@ -25,7 +25,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Battle.Application.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Battle.Infrastructure.Tests", "..\..\tests\Kombats.Battle.Infrastructure.Tests\Kombats.Battle.Infrastructure.Tests.csproj", "{C4ADAF98-FB45-4671-9450-87B9344C103C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Contracts", "Kombats.Contracts\Kombats.Contracts.csproj", "{5E628B04-26F5-41E1-932E-34AD52FE511B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kombats.Battle.Contracts", "Kombats.Battle.Contracts\Kombats.Battle.Contracts.csproj", "{5E628B04-26F5-41E1-932E-34AD52FE511B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

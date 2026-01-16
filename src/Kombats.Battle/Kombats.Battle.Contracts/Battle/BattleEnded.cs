@@ -1,4 +1,4 @@
-﻿namespace Kombats.Contracts.Battle;
+﻿namespace Kombats.Battle.Contracts.Battle;
 
 public record BattleEnded
 {

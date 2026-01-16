@@ -1,4 +1,4 @@
-namespace Kombats.Contracts.Battle;
+namespace Kombats.Battle.Contracts.Battle;
 
 /// <summary>
 /// Event published when a battle is created.

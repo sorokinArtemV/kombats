@@ -1,5 +1,5 @@
 using Kombats.Battle.Infrastructure.Data.DbContext;
-using Kombats.Contracts.Battle;
+using Kombats.Battle.Contracts.Battle;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;

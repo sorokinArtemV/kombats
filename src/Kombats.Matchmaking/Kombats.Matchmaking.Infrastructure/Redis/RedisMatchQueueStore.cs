@@ -43,8 +43,8 @@ public class RedisMatchQueueStore : IMatchQueueStore
         {
             var result = await db.ScriptEvaluateAsync(
                 RedisScripts.JoinQueueScript,
-                new RedisKey[] { queueKey, queuedKey },
-                new RedisValue[] { playerIdStr });
+                [queueKey, queuedKey],
+                [playerIdStr]);
 
             var added = (int)result == 1;
             
@@ -114,7 +114,7 @@ public class RedisMatchQueueStore : IMatchQueueStore
             var result = await db.ScriptEvaluateAsync(
                 RedisScripts.TryPopPairScript,
                 [queueKey, queuedKey, canceledKey],
-                Array.Empty<RedisValue>());
+                []);
 
             if (result.IsNull)
             {

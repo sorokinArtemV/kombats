@@ -15,7 +15,7 @@ using Kombats.Battle.Infrastructure.Profiles;
 using Kombats.Battle.Infrastructure.Rules;
 using Kombats.Battle.Infrastructure.State.Redis;
 using Kombats.Battle.Infrastructure.Time;
-using Kombats.Contracts.Battle;
+using Kombats.Battle.Contracts.Battle;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Events;

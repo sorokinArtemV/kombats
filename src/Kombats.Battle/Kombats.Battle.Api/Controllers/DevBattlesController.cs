@@ -1,4 +1,4 @@
-using Kombats.Contracts.Battle;
+using Kombats.Battle.Contracts.Battle;
 using MassTransit;
 using Microsoft.AspNetCore.Mvc;
 

@@ -1,10 +1,10 @@
-using Kombats.Matchmaking.Application.Abstractions;
-using Kombats.Matchmaking.Infrastructure.Data.Entities;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using Kombats.Matchmaking.Application.Abstractions;
+using Kombats.Matchmaking.Infrastructure.Data;
+using Kombats.Matchmaking.Infrastructure.Entities;
+using Microsoft.Extensions.Logging;
 
-namespace Kombats.Matchmaking.Infrastructure.Data;
+namespace Kombats.Matchmaking.Infrastructure.Messaging;
 
 /// <summary>
 /// Infrastructure implementation of IOutboxWriter using EF Core.
@@ -59,4 +59,5 @@ public class OutboxWriter : IOutboxWriter
         }
     }
 }
+
 

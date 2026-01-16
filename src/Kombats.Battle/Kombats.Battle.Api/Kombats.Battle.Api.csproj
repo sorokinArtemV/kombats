@@ -12,7 +12,7 @@
     <ProjectReference Include="..\Kombats.Battle.Domain\Kombats.Battle.Domain.csproj" />
     <ProjectReference Include="..\Kombats.Battle.Infrastructure\Kombats.Battle.Infrastructure.csproj" />
     <ProjectReference Include="..\Kombats.Battle.Realtime.Contracts\Kombats.Battle.Realtime.Contracts.csproj" />
-    <ProjectReference Include="..\Kombats.Contracts\Kombats.Contracts.csproj" />
+    <ProjectReference Include="..\Kombats.Battle.Contracts\Kombats.Battle.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

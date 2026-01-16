@@ -1,6 +1,6 @@
 using Kombats.Battle.Application.Abstractions;
 using Kombats.Battle.Domain.Results;
-using Kombats.Contracts.Battle;
+using Kombats.Battle.Contracts.Battle;
 using MassTransit;
 using Microsoft.Extensions.Logging;
 

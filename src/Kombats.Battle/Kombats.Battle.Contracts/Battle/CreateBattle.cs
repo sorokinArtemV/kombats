@@ -1,4 +1,4 @@
-namespace Kombats.Contracts.Battle;
+namespace Kombats.Battle.Contracts.Battle;
 
 /// <summary>
 /// Command to create a new battle.

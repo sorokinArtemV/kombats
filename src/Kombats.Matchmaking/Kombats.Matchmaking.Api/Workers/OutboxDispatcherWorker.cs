@@ -1,10 +1,10 @@
 using Kombats.Matchmaking.Infrastructure.Data;
-using Kombats.Matchmaking.Infrastructure.Data.Entities;
 using Kombats.Matchmaking.Infrastructure.Options;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
+using Kombats.Matchmaking.Infrastructure.Entities;
 
 namespace Kombats.Matchmaking.Api.Workers;
 

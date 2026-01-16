@@ -1,4 +1,4 @@
-using Kombats.Matchmaking.Infrastructure.Data.Entities;
+using Kombats.Matchmaking.Infrastructure.Entities;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 

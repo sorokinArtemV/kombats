@@ -1,7 +1,7 @@
 using Kombats.Battle.Application.UseCases.Lifecycle;
 using Kombats.Battle.Infrastructure.Data.DbContext;
 using Kombats.Battle.Infrastructure.Data.Entities;
-using Kombats.Contracts.Battle;
+using Kombats.Battle.Contracts.Battle;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
