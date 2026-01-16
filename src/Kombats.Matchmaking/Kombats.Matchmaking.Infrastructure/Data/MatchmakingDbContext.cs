@@ -15,6 +15,7 @@ public class MatchmakingDbContext : DbContext
     }
 
     public DbSet<MatchEntity> Matches => Set<MatchEntity>();
+    public DbSet<OutboxMessageEntity> OutboxMessages => Set<OutboxMessageEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,6 +62,42 @@ public class MatchmakingDbContext : DbContext
 
             // Index on PlayerBId
             entity.HasIndex(e => e.PlayerBId);
+            
+            // Composite indexes for GetLatestForPlayerAsync queries
+            entity.HasIndex(e => new { e.PlayerAId, e.CreatedAtUtc });
+            entity.HasIndex(e => new { e.PlayerBId, e.CreatedAtUtc });
+        });
+
+        // Configure OutboxMessageEntity
+        modelBuilder.Entity<OutboxMessageEntity>(entity =>
+        {
+            entity.ToTable("matchmaking_outbox_messages");
+
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Id)
+                .IsRequired();
+
+            entity.Property(e => e.OccurredAtUtc)
+                .IsRequired();
+
+            entity.Property(e => e.Type)
+                .HasMaxLength(256)
+                .IsRequired();
+
+            entity.Property(e => e.Payload)
+                .IsRequired();
+
+            entity.Property(e => e.Status)
+                .IsRequired();
+
+            entity.Property(e => e.RetryCount)
+                .IsRequired()
+                .HasDefaultValue(0);
+
+            // Index for querying pending messages
+            entity.HasIndex(e => new { e.Status, e.OccurredAtUtc })
+                .HasDatabaseName("IX_OutboxMessages_Status_OccurredAtUtc");
         });
 
         // Configure MassTransit EF Core integration entities (Inbox/Outbox)
@@ -69,6 +106,7 @@ public class MatchmakingDbContext : DbContext
         modelBuilder.AddOutboxStateEntity();
     }
 }
+
 
 
 

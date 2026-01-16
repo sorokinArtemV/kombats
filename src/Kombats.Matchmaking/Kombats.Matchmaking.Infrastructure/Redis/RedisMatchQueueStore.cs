@@ -113,7 +113,7 @@ public class RedisMatchQueueStore : IMatchQueueStore
         {
             var result = await db.ScriptEvaluateAsync(
                 RedisScripts.TryPopPairScript,
-                new RedisKey[] { queueKey, queuedKey, canceledKey },
+                [queueKey, queuedKey, canceledKey],
                 Array.Empty<RedisValue>());
 
             if (result.IsNull)
@@ -130,8 +130,7 @@ public class RedisMatchQueueStore : IMatchQueueStore
             var playerAIdStr = results[0].ToString();
             var playerBIdStr = results[1].ToString();
 
-            if (!Guid.TryParse(playerAIdStr, out var playerAId) ||
-                !Guid.TryParse(playerBIdStr, out var playerBId))
+            if (!Guid.TryParse(playerAIdStr, out var playerAId) || !Guid.TryParse(playerBIdStr, out var playerBId))
             {
                 _logger.LogError(
                     "Failed to parse player IDs from Redis: PlayerA={PlayerA}, PlayerB={PlayerB}",

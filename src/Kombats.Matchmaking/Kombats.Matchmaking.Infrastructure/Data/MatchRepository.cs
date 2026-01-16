@@ -1,8 +1,6 @@
-using Kombats.Contracts.Battle;
 using Kombats.Matchmaking.Application.Abstractions;
 using Kombats.Matchmaking.Domain;
 using Kombats.Matchmaking.Infrastructure.Data.Entities;
-using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -14,16 +12,13 @@ namespace Kombats.Matchmaking.Infrastructure.Data;
 public class MatchRepository : IMatchRepository
 {
     private readonly MatchmakingDbContext _dbContext;
-    private readonly ISendEndpointProvider _sendEndpointProvider;
     private readonly ILogger<MatchRepository> _logger;
 
     public MatchRepository(
         MatchmakingDbContext dbContext,
-        ISendEndpointProvider sendEndpointProvider,
         ILogger<MatchRepository> logger)
     {
         _dbContext = dbContext;
-        _sendEndpointProvider = sendEndpointProvider;
         _logger = logger;
     }
 
@@ -86,7 +81,7 @@ public class MatchRepository : IMatchRepository
         }
     }
 
-    public async Task UpdateStateAsync(Guid matchId, MatchState newState, DateTimeOffset updatedAtUtc, CancellationToken cancellationToken = default)
+    public async Task UpdateStateAsync(Guid matchId, MatchState newState, DateTime updatedAtUtc, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -102,7 +97,7 @@ public class MatchRepository : IMatchRepository
             }
 
             entity.State = (int)newState;
-            entity.UpdatedAtUtc = updatedAtUtc.DateTime;
+            entity.UpdatedAtUtc = new DateTimeOffset(updatedAtUtc, TimeSpan.Zero);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -119,48 +114,46 @@ public class MatchRepository : IMatchRepository
         }
     }
 
-    public async Task CreateMatchAndSendCommandAsync(
-        Match match,
-        CreateBattle createBattleCommand,
-        MatchState targetState,
+    public async Task<bool> TryUpdateStateAsync(
+        Guid matchId,
+        MatchState expectedState,
+        MatchState newState,
+        DateTime updatedAtUtc,
         CancellationToken cancellationToken = default)
     {
-        // In ONE DB transaction:
-        // 1) Insert Match (state = Created)
-        // 2) Send CreateBattle command (will be stored in outbox if using ConsumeContext, but we're in a background service)
-        // 3) Update Match state -> BattleCreateRequested
-        using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            // 1) Insert Match (state = Created)
-            var entity = ToEntity(match);
-            _dbContext.Matches.Add(entity);
+            // CAS update: only update if current state matches expected state
+            var affectedRows = await _dbContext.Matches
+                .Where(m => m.MatchId == matchId && m.State == (int)expectedState)
+                .ExecuteUpdateAsync(
+                    setter => setter
+                        .SetProperty(m => m.State, (int)newState)
+                        .SetProperty(m => m.UpdatedAtUtc, new DateTimeOffset(updatedAtUtc, TimeSpan.Zero)),
+                    cancellationToken);
 
-            // 2) Send CreateBattle command
-            // Note: ISendEndpointProvider.Send() doesn't automatically use outbox from background services
-            // For true transactional outbox, we'd need to use IOutboxMessageStore directly
-            // For now, we send the command and rely on transaction rollback if it fails
-            var endpoint = await _sendEndpointProvider.GetSendEndpoint(new Uri("queue:battle.create-battle"));
-            await endpoint.Send(createBattleCommand, cancellationToken);
+            var success = affectedRows > 0;
 
-            // 3) Update Match state -> BattleCreateRequested
-            entity.State = (int)targetState;
-            entity.UpdatedAtUtc = DateTimeOffset.UtcNow.DateTime;
+            if (success)
+            {
+                _logger.LogInformation(
+                    "CAS update succeeded: MatchId={MatchId}, ExpectedState={ExpectedState}, NewState={NewState}",
+                    matchId, expectedState, newState);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "CAS update failed (state mismatch or match not found): MatchId={MatchId}, ExpectedState={ExpectedState}, NewState={NewState}",
+                    matchId, expectedState, newState);
+            }
 
-            // Save all changes atomically
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            _logger.LogInformation(
-                "Created match and sent CreateBattle command: MatchId={MatchId}, BattleId={BattleId}, PlayerA={PlayerAId}, PlayerB={PlayerBId}",
-                match.MatchId, match.BattleId, match.PlayerAId, match.PlayerBId);
+            return success;
         }
         catch (Exception ex)
         {
-            await transaction.RollbackAsync(cancellationToken);
             _logger.LogError(ex,
-                "Failed to create match and send CreateBattle command: MatchId={MatchId}, BattleId={BattleId}",
-                match.MatchId, match.BattleId);
+                "Error in TryUpdateStateAsync for MatchId: {MatchId}, ExpectedState: {ExpectedState}, NewState: {NewState}",
+                matchId, expectedState, newState);
             throw;
         }
     }
@@ -175,13 +168,22 @@ public class MatchRepository : IMatchRepository
             PlayerBId = entity.PlayerBId,
             Variant = entity.Variant,
             State = (MatchState)entity.State,
-            CreatedAtUtc = new DateTimeOffset(DateTime.SpecifyKind(entity.CreatedAtUtc, DateTimeKind.Utc)),
-            UpdatedAtUtc = new DateTimeOffset(DateTime.SpecifyKind(entity.UpdatedAtUtc, DateTimeKind.Utc))
+            CreatedAtUtc = entity.CreatedAtUtc,
+            UpdatedAtUtc = entity.UpdatedAtUtc
         };
     }
 
     private static MatchEntity ToEntity(Match match)
     {
+        // Ensure UTC: DateTimeOffset.UtcNow already has offset=0, but normalize to be safe
+        var createdAtUtc = match.CreatedAtUtc.Offset == TimeSpan.Zero
+            ? match.CreatedAtUtc
+            : new DateTimeOffset(match.CreatedAtUtc.UtcDateTime, TimeSpan.Zero);
+        
+        var updatedAtUtc = match.UpdatedAtUtc.Offset == TimeSpan.Zero
+            ? match.UpdatedAtUtc
+            : new DateTimeOffset(match.UpdatedAtUtc.UtcDateTime, TimeSpan.Zero);
+
         return new MatchEntity
         {
             MatchId = match.MatchId,
@@ -190,8 +192,8 @@ public class MatchRepository : IMatchRepository
             PlayerBId = match.PlayerBId,
             Variant = match.Variant,
             State = (int)match.State,
-            CreatedAtUtc = match.CreatedAtUtc.DateTime,
-            UpdatedAtUtc = match.UpdatedAtUtc.DateTime
+            CreatedAtUtc = createdAtUtc,
+            UpdatedAtUtc = updatedAtUtc
         };
     }
 }

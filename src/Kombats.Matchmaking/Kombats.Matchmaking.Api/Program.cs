@@ -1,11 +1,8 @@
 using Combats.Infrastructure.Messaging.DependencyInjection;
-using Kombats.Contracts.Battle;
-using Kombats.Matchmaking.Api.Controllers;
 using Kombats.Matchmaking.Api.Workers;
 using Kombats.Matchmaking.Application.Abstractions;
 using Kombats.Matchmaking.Application.UseCases;
 using Kombats.Matchmaking.Infrastructure.Data;
-using Kombats.Matchmaking.Infrastructure.Messaging.Consumers;
 using Kombats.Matchmaking.Infrastructure.Options;
 using Kombats.Matchmaking.Infrastructure.Redis;
 using Microsoft.EntityFrameworkCore;
@@ -38,10 +35,6 @@ builder.Services.AddDbContext<MatchmakingDbContext>(options =>
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
 
-// Configure Matchmaking Redis options
-builder.Services.Configure<MatchmakingRedisOptions>(
-    builder.Configuration.GetSection(MatchmakingRedisOptions.SectionName));
-
 // Configure Matchmaking Worker options
 builder.Services.Configure<MatchmakingWorkerOptions>(
     builder.Configuration.GetSection(MatchmakingWorkerOptions.SectionName));
@@ -50,10 +43,16 @@ builder.Services.Configure<MatchmakingWorkerOptions>(
 builder.Services.Configure<MatchTimeoutWorkerOptions>(
     builder.Configuration.GetSection(MatchTimeoutWorkerOptions.SectionName));
 
+// Configure Outbox Dispatcher options
+builder.Services.Configure<OutboxDispatcherOptions>(
+    builder.Configuration.GetSection(OutboxDispatcherOptions.SectionName));
+
 // Register Application ports (implemented by Infrastructure)
 builder.Services.AddScoped<IMatchQueueStore, RedisMatchQueueStore>();
 builder.Services.AddScoped<IPlayerMatchStatusStore, RedisPlayerMatchStatusStore>();
 builder.Services.AddScoped<IMatchRepository, MatchRepository>();
+builder.Services.AddScoped<IOutboxWriter, OutboxWriter>();
+builder.Services.AddScoped<ITransactionManager, TransactionManager>();
 
 // Register Application services
 builder.Services.AddScoped<QueueService>();
@@ -63,20 +62,13 @@ builder.Services.AddScoped<MatchmakingService>();
 builder.Services.AddMessaging<MatchmakingDbContext>(
     builder.Configuration,
     "matchmaking",
-    x =>
-    {
-        x.AddConsumer<BattleCreatedConsumer>();
-    },
-    messagingBuilder =>
-    {
-        // Register entity name mappings
-        messagingBuilder.Map<CreateBattle>("CreateBattle");
-        messagingBuilder.Map<BattleCreated>("BattleCreated");
-    });
+    _ => { },
+    _ => { });
 
 // Register background workers
 builder.Services.AddHostedService<MatchmakingWorker>();
 builder.Services.AddHostedService<MatchTimeoutWorker>();
+builder.Services.AddHostedService<OutboxDispatcherWorker>();
 
 var app = builder.Build();
 

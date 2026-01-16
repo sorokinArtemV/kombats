@@ -3,6 +3,7 @@ using System;
 using Kombats.Matchmaking.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Kombats.Matchmaking.Infrastructure.Migrations
 {
     [DbContext(typeof(MatchmakingDbContext))]
-    partial class MatchmakingDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260116080849_Test")]
+    partial class Test
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -60,54 +63,7 @@ namespace Kombats.Matchmaking.Infrastructure.Migrations
 
                     b.HasIndex("PlayerBId");
 
-                    b.HasIndex("PlayerAId", "CreatedAtUtc");
-
-                    b.HasIndex("PlayerBId", "CreatedAtUtc");
-
                     b.ToTable("matches", (string)null);
-                });
-
-            modelBuilder.Entity("Kombats.Matchmaking.Infrastructure.Data.Entities.OutboxMessageEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("CorrelationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("LastAttemptAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("LastError")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("OccurredAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Payload")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("RetryCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Status", "OccurredAtUtc")
-                        .HasDatabaseName("IX_OutboxMessages_Status_OccurredAtUtc");
-
-                    b.ToTable("matchmaking_outbox_messages", (string)null);
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.InboxState", b =>

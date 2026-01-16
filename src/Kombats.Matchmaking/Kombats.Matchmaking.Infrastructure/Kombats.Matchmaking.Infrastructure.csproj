@@ -26,4 +26,8 @@
         <PackageReference Include="StackExchange.Redis" Version="2.8.16"/>
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="Messaging\" />
+    </ItemGroup>
+
 </Project>

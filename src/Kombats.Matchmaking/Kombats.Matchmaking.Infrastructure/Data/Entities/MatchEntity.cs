@@ -11,8 +11,8 @@ public class MatchEntity
     public Guid PlayerBId { get; set; }
     public string Variant { get; set; } = string.Empty;
     public int State { get; set; }
-    public DateTime CreatedAtUtc { get; set; }
-    public DateTime UpdatedAtUtc { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
 }
 
 

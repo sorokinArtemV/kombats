@@ -28,27 +28,49 @@ public class QueueService
 
     /// <summary>
     /// Joins a player to the matchmaking queue.
+    /// First checks Postgres for active match (source of truth).
     /// Returns the current status (Searching if added, Matched if already matched).
     /// </summary>
     public async Task<PlayerMatchStatus> JoinQueueAsync(Guid playerId, string variant, CancellationToken cancellationToken = default)
     {
-        // Check current status first (idempotency)
+        // CRITICAL: Check Postgres first (source of truth) for active match
+        // If player has an active match, return Matched and DO NOT add to queue
+        var activeMatch = await _matchRepository.GetLatestForPlayerAsync(playerId, cancellationToken);
+        if (activeMatch != null && IsActiveMatch(activeMatch.State))
+        {
+            _logger.LogInformation(
+                "Player has active match in Postgres (cannot join queue): PlayerId={PlayerId}, MatchId={MatchId}, BattleId={BattleId}, State={State}, Variant={Variant}",
+                playerId, activeMatch.MatchId, activeMatch.BattleId, activeMatch.State, activeMatch.Variant);
+            return new PlayerMatchStatus
+            {
+                State = PlayerMatchState.Matched,
+                MatchId = activeMatch.MatchId,
+                BattleId = activeMatch.BattleId,
+                Variant = activeMatch.Variant,
+                UpdatedAtUtc = activeMatch.UpdatedAtUtc,
+                MatchState = activeMatch.State
+            };
+        }
+
+        // Check Redis status for idempotency
         var currentStatus = await _statusStore.GetStatusAsync(playerId, cancellationToken);
         
         if (currentStatus != null)
         {
-            // Already searching or matched - return current status
-            if (currentStatus.State == PlayerMatchState.Matched)
-            {
-                _logger.LogInformation(
-                    "Player already matched: PlayerId={PlayerId}, MatchId={MatchId}, BattleId={BattleId}, Variant={Variant}",
-                    playerId, currentStatus.MatchId, currentStatus.BattleId, currentStatus.Variant);
-                return currentStatus;
-            }
-            
             // Already searching - ensure they're also in queue (defensive check)
             if (currentStatus.State == PlayerMatchState.Searching)
             {
+                // Check if variant matches
+                if (currentStatus.Variant != variant)
+                {
+                    _logger.LogWarning(
+                        "Player is searching with different variant: PlayerId={PlayerId}, CurrentVariant={CurrentVariant}, RequestedVariant={RequestedVariant}",
+                        playerId, currentStatus.Variant, variant);
+                    // For now, return current status (don't allow switching variant while searching)
+                    // TODO: Consider implementing leave old + join new atomically if needed
+                    return currentStatus;
+                }
+
                 // Try to join queue anyway (idempotent - will return false if already queued)
                 var added = await _queueStore.TryJoinQueueAsync(variant, playerId, cancellationToken);
                 _logger.LogInformation(
@@ -83,11 +105,27 @@ public class QueueService
 
     /// <summary>
     /// Removes a player from the matchmaking queue.
-    /// Returns null if not in queue, or MatchInfo if already matched (conflict).
+    /// First checks Postgres for active match (source of truth).
+    /// Returns result indicating success, not in queue, or already matched (conflict).
     /// </summary>
     public async Task<LeaveQueueResult> LeaveQueueAsync(Guid playerId, string variant, CancellationToken cancellationToken = default)
     {
-        // Check current status first
+        // CRITICAL: Check Postgres first (source of truth) for active match
+        // If player has an active match, return AlreadyMatched
+        var activeMatch = await _matchRepository.GetLatestForPlayerAsync(playerId, cancellationToken);
+        if (activeMatch != null && IsActiveMatch(activeMatch.State))
+        {
+            _logger.LogWarning(
+                "Player attempted to leave but has active match in Postgres: PlayerId={PlayerId}, MatchId={MatchId}, BattleId={BattleId}, State={State}, Variant={Variant}",
+                playerId, activeMatch.MatchId, activeMatch.BattleId, activeMatch.State, activeMatch.Variant);
+            return LeaveQueueResult.AlreadyMatched(new MatchInfo
+            {
+                MatchId = activeMatch.MatchId,
+                BattleId = activeMatch.BattleId
+            });
+        }
+
+        // Check Redis status
         var currentStatus = await _statusStore.GetStatusAsync(playerId, cancellationToken);
         
         if (currentStatus == null)
@@ -99,20 +137,7 @@ public class QueueService
             return LeaveQueueResult.NotInQueue;
         }
 
-        if (currentStatus.State == PlayerMatchState.Matched)
-        {
-            // Already matched - return conflict
-            _logger.LogWarning(
-                "Player attempted to leave but already matched: PlayerId={PlayerId}, MatchId={MatchId}, BattleId={BattleId}, Variant={Variant}",
-                playerId, currentStatus.MatchId, currentStatus.BattleId, currentStatus.Variant);
-            return LeaveQueueResult.AlreadyMatched(new MatchInfo
-            {
-                MatchId = currentStatus.MatchId!.Value,
-                BattleId = currentStatus.BattleId!.Value
-            });
-        }
-
-        // Remove from queue and status
+        // Remove from queue and status (idempotent operations)
         await _queueStore.TryLeaveQueueAsync(variant, playerId, cancellationToken);
         await _statusStore.RemoveStatusAsync(playerId, cancellationToken);
         
@@ -126,16 +151,16 @@ public class QueueService
     /// <summary>
     /// Gets the current match status for a player.
     /// First checks Postgres for latest match (source of truth).
-    /// If no match found, checks Redis for queue status (Searching/NotQueued).
+    /// If no active match found, checks Redis for queue status (Searching/NotQueued).
     /// </summary>
     public async Task<PlayerMatchStatus?> GetStatusAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         // First check Postgres for latest match (source of truth)
         var match = await _matchRepository.GetLatestForPlayerAsync(playerId, cancellationToken);
         
-        if (match != null && match.State >= MatchState.Created)
+        if (match != null && IsActiveMatch(match.State))
         {
-            // Player has a match in Postgres - return Matched status with match state
+            // Player has an active match in Postgres - return Matched status with match state
             return new PlayerMatchStatus
             {
                 State = PlayerMatchState.Matched,
@@ -147,7 +172,7 @@ public class QueueService
             };
         }
 
-        // No match in Postgres - check Redis for queue status
+        // No active match in Postgres - check Redis for queue status
         // Check if player is in the queued set (Searching)
         var redisStatus = await _statusStore.GetStatusAsync(playerId, cancellationToken);
         
@@ -158,6 +183,14 @@ public class QueueService
 
         // Not matched and not searching
         return null;
+    }
+
+    /// <summary>
+    /// Determines if a match state represents an active match (not completed or timed out).
+    /// </summary>
+    private static bool IsActiveMatch(MatchState state)
+    {
+        return state != MatchState.Completed && state != MatchState.TimedOut;
     }
 }
 

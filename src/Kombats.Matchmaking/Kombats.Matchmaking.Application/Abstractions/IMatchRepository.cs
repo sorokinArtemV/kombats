@@ -1,4 +1,3 @@
-using Kombats.Contracts.Battle;
 using Kombats.Matchmaking.Domain;
 
 namespace Kombats.Matchmaking.Application.Abstractions;
@@ -28,16 +27,18 @@ public interface IMatchRepository
     /// <summary>
     /// Updates the state of an existing match.
     /// </summary>
-    Task UpdateStateAsync(Guid matchId, MatchState newState, DateTimeOffset updatedAtUtc, CancellationToken cancellationToken = default);
+    Task UpdateStateAsync(Guid matchId, MatchState newState, DateTime updatedAtUtc, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Creates a match and sends CreateBattle command in a single transaction.
-    /// This ensures atomicity: match insert, command send (outbox), and state update.
+    /// Attempts to update match state using Compare-And-Swap (CAS) pattern.
+    /// Only updates if current state matches expected state.
+    /// Returns true if update succeeded, false if state mismatch (concurrent modification or already transitioned).
     /// </summary>
-    Task CreateMatchAndSendCommandAsync(
-        Match match,
-        CreateBattle createBattleCommand,
-        MatchState targetState,
+    Task<bool> TryUpdateStateAsync(
+        Guid matchId,
+        MatchState expectedState,
+        MatchState newState,
+        DateTime updatedAtUtc,
         CancellationToken cancellationToken = default);
 }
 

@@ -73,7 +73,7 @@ public sealed class MatchTimeoutWorker : BackgroundService
         {
             try
             {
-                var updatedAt = DateTimeOffset.UtcNow;
+                var updatedAt = DateTime.UtcNow;
                 await matchRepository.UpdateStateAsync(
                     match.MatchId,
                     MatchState.TimedOut,
