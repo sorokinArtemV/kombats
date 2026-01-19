@@ -10,18 +10,15 @@ namespace Kombats.Matchmaking.Application.UseCases;
 public class QueueService
 {
     private readonly IMatchQueueStore _queueStore;
-    private readonly IPlayerMatchStatusStore _statusStore;
     private readonly IMatchRepository _matchRepository;
     private readonly ILogger<QueueService> _logger;
 
     public QueueService(
         IMatchQueueStore queueStore,
-        IPlayerMatchStatusStore statusStore,
         IMatchRepository matchRepository,
         ILogger<QueueService> logger)
     {
         _queueStore = queueStore;
-        _statusStore = statusStore;
         _matchRepository = matchRepository;
         _logger = logger;
     }
@@ -52,42 +49,27 @@ public class QueueService
             };
         }
 
-        // Check Redis status for idempotency
-        var currentStatus = await _statusStore.GetStatusAsync(playerId, cancellationToken);
+        // Check if player is already in queue for idempotency
+        var isQueued = await _queueStore.IsQueuedAsync(variant, playerId, cancellationToken);
         
-        if (currentStatus != null)
+        if (isQueued)
         {
-            // Already searching - ensure they're also in queue (defensive check)
-            if (currentStatus.State == PlayerMatchState.Searching)
+            // Already in queue - idempotent operation
+            _logger.LogInformation(
+                "Player already in queue (idempotent join): PlayerId={PlayerId}, Variant={Variant}",
+                playerId, variant);
+            return new PlayerMatchStatus
             {
-                // Check if variant matches
-                if (currentStatus.Variant != variant)
-                {
-                    _logger.LogWarning(
-                        "Player is searching with different variant: PlayerId={PlayerId}, CurrentVariant={CurrentVariant}, RequestedVariant={RequestedVariant}",
-                        playerId, currentStatus.Variant, variant);
-                    // For now, return current status (don't allow switching variant while searching)
-                    // TODO: Consider implementing leave old + join new atomically if needed
-                    return currentStatus;
-                }
-
-                // Try to join queue anyway (idempotent - will return false if already queued)
-                var added = await _queueStore.TryJoinQueueAsync(variant, playerId, cancellationToken);
-                _logger.LogInformation(
-                    "Player already searching (idempotent join): PlayerId={PlayerId}, Variant={Variant}, AddedToQueue={AddedToQueue}",
-                    playerId, currentStatus.Variant, added);
-                return currentStatus;
-            }
+                State = PlayerMatchState.Searching,
+                MatchId = null,
+                BattleId = null,
+                Variant = variant,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            };
         }
 
-        // CRITICAL: Both operations must happen for a player to be matchable
-        // 1. Enqueue player into match queue (mm:queue/mm:queued)
+        // Enqueue player into match queue (idempotent operation)
         bool isAdded = await _queueStore.TryJoinQueueAsync(variant, playerId, cancellationToken);
-        
-        // 2. Set player status to Searching (mm:player:*)
-        // Always set status regardless of queue result to maintain consistency
-        // If already in queue (added=false), status update is still needed for idempotency
-        await _statusStore.SetSearchingAsync(variant, playerId, cancellationToken);
         
         _logger.LogInformation(
             "Player joined matchmaking: PlayerId={PlayerId}, Variant={Variant}, AddedToQueue={AddedToQueue}",
@@ -125,10 +107,10 @@ public class QueueService
             });
         }
 
-        // Check Redis status
-        var currentStatus = await _statusStore.GetStatusAsync(playerId, cancellationToken);
+        // Check if player is in queue
+        var isQueued = await _queueStore.IsQueuedAsync(variant, playerId, cancellationToken);
         
-        if (currentStatus == null)
+        if (!isQueued)
         {
             // Not in queue - idempotent success
             _logger.LogInformation(
@@ -137,9 +119,8 @@ public class QueueService
             return LeaveQueueResult.NotInQueue;
         }
 
-        // Remove from queue and status (idempotent operations)
+        // Remove from queue (idempotent operation)
         await _queueStore.TryLeaveQueueAsync(variant, playerId, cancellationToken);
-        await _statusStore.RemoveStatusAsync(playerId, cancellationToken);
         
         _logger.LogInformation(
             "Player left queue: PlayerId={PlayerId}, Variant={Variant}",
@@ -150,12 +131,13 @@ public class QueueService
 
     /// <summary>
     /// Gets the current match status for a player.
-    /// First checks Postgres for latest match (source of truth).
-    /// If no active match found, checks Redis for queue status (Searching/NotQueued).
+    /// First checks Postgres for latest match (source of truth for "in match").
+    /// If no active match found, checks Redis queue store (source of truth for "in queue").
+    /// Returns null if player is idle (no active match and not queued).
     /// </summary>
     public async Task<PlayerMatchStatus?> GetStatusAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
-        // First check Postgres for latest match (source of truth)
+        // First check Postgres for latest match (source of truth for "in match")
         var match = await _matchRepository.GetLatestForPlayerAsync(playerId, cancellationToken);
         
         if (match != null && IsActiveMatch(match.State))
@@ -172,16 +154,26 @@ public class QueueService
             };
         }
 
-        // No active match in Postgres - check Redis for queue status
-        // Check if player is in the queued set (Searching)
-        var redisStatus = await _statusStore.GetStatusAsync(playerId, cancellationToken);
+        // No active match in Postgres - check Redis queue store (source of truth for "in queue")
+        // Check if player is in the queued set for default variant (Searching)
+        // Note: For simplicity, we check the default variant. If variant-specific status is needed,
+        // the API should accept a variant parameter and pass it here.
+        const string defaultVariant = "default";
+        var isQueued = await _queueStore.IsQueuedAsync(defaultVariant, playerId, cancellationToken);
         
-        if (redisStatus != null && redisStatus.State == PlayerMatchState.Searching)
+        if (isQueued)
         {
-            return redisStatus;
+            return new PlayerMatchStatus
+            {
+                State = PlayerMatchState.Searching,
+                MatchId = null,
+                BattleId = null,
+                Variant = defaultVariant,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            };
         }
 
-        // Not matched and not searching
+        // Not matched and not searching (Idle)
         return null;
     }
 

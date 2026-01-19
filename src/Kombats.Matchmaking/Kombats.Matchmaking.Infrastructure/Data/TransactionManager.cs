@@ -21,6 +21,11 @@ public class TransactionManager : ITransactionManager
         return new EfTransactionHandle(transaction);
     }
 
+    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     private class EfTransactionHandle : ITransactionHandle
     {
         private readonly IDbContextTransaction _transaction;

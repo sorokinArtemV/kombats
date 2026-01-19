@@ -18,11 +18,18 @@ public interface IMatchQueueStore
     Task<bool> TryLeaveQueueAsync(string variant, Guid playerId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Checks if a player is currently in the queue.
+    /// Returns true if player is in the queued set, false otherwise.
+    /// </summary>
+    Task<bool> IsQueuedAsync(string variant, Guid playerId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Atomically pops a pair of players from the queue.
     /// Returns the pair if both players are available, null otherwise.
     /// </summary>
     Task<(Guid PlayerAId, Guid PlayerBId)?> TryPopPairAsync(string variant, CancellationToken cancellationToken = default);
 }
+
 
 
 

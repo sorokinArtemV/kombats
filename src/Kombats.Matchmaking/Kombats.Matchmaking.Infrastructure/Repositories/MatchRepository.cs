@@ -66,11 +66,13 @@ public class MatchRepository : IMatchRepository
         try
         {
             var entity = ToEntity(match);
-            _dbContext.Matches.Add(entity);
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _dbContext.Matches.AddAsync(entity, cancellationToken);
+            // Note: SaveChangesAsync is NOT called here - it should be called
+            // in the same transaction as other entities (e.g., outbox messages)
+            // by the service layer (e.g., MatchmakingService) to ensure atomicity.
 
-            _logger.LogInformation(
-                "Inserted match: MatchId={MatchId}, BattleId={BattleId}, PlayerA={PlayerAId}, PlayerB={PlayerBId}",
+            _logger.LogDebug(
+                "Added match entity to DbContext: MatchId={MatchId}, BattleId={BattleId}, PlayerA={PlayerAId}, PlayerB={PlayerBId}",
                 match.MatchId, match.BattleId, match.PlayerAId, match.PlayerBId);
         }
         catch (Exception ex)

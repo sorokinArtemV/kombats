@@ -58,15 +58,14 @@ public class MatchmakingService
 
         var nowUtc = DateTime.UtcNow;
 
-        // Use transactional outbox: in ONE DB transaction:
-        // 1) Insert Match with state = BattleCreateRequested (or Created, then CAS update)
-        // 2) Add outbox message for CreateBattle command
-        // 3) Commit transaction
-        // Publication will happen later by OutboxDispatcher worker
+        // CRITICAL: Match + Outbox are committed atomically in one transaction.
+        // Both repository and outbox writer add entities to the shared DbContext.
+        // SaveChangesAsync is called ONCE after both entities are added.
+        // If SaveChangesAsync fails or transaction rollback occurs, neither entity is committed.
         await using var transaction = await _transactionManager.BeginTransactionAsync(cancellationToken);
         try
         {
-            // 1) Insert Match with state = BattleCreateRequested (directly in target state to simplify)
+            // 1) Add Match entity to DbContext (does NOT call SaveChanges)
             var match = new Match
             {
                 MatchId = matchId,
@@ -81,7 +80,7 @@ public class MatchmakingService
 
             await _matchRepository.InsertAsync(match, cancellationToken);
 
-            // 2) Add outbox message for CreateBattle command
+            // 2) Add outbox message entity to DbContext (does NOT call SaveChanges)
             var createBattleCommand = new
             {
                 BattleId = battleId,
@@ -104,9 +103,11 @@ public class MatchmakingService
 
             await _outboxWriter.EnqueueAsync(outboxMessage, cancellationToken);
 
-            // 3) Save all changes and commit transaction atomically
-            // Note: SaveChangesAsync is called in InsertAsync and EnqueueAsync, but both use same DbContext
-            // The transaction ensures atomicity
+            // 3) Save all changes atomically in ONE call
+            // This ensures both match and outbox are saved together or not at all
+            await _transactionManager.SaveChangesAsync(cancellationToken);
+
+            // 4) Commit transaction
             await transaction.CommitAsync(cancellationToken);
 
             _logger.LogInformation(

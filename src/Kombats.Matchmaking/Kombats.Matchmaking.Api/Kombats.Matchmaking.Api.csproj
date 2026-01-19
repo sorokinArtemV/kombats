@@ -11,7 +11,6 @@
         <ProjectReference Include="..\Kombats.Matchmaking.Application\Kombats.Matchmaking.Application.csproj"/>
         <ProjectReference Include="..\Kombats.Matchmaking.Infrastructure\Kombats.Matchmaking.Infrastructure.csproj"/>
         <ProjectReference Include="..\..\Kombats.Common\Kombats.Infrastructure.Messaging\Kombats.Infrastructure.Messaging.csproj"/>
-        <ProjectReference Include="..\..\Kombats.Battle\Kombats.Contracts\Kombats.Contracts.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

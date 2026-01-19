@@ -9,7 +9,6 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Kombats.Matchmaking.Domain\Kombats.Matchmaking.Domain.csproj"/>
-        <ProjectReference Include="..\..\Kombats.Battle\Kombats.Contracts\Kombats.Contracts.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

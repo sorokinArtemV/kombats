@@ -51,7 +51,6 @@ builder.Services.Configure<OutboxDispatcherOptions>(
 
 // Register Application ports (implemented by Infrastructure)
 builder.Services.AddScoped<IMatchQueueStore, RedisMatchQueueStore>();
-builder.Services.AddScoped<IPlayerMatchStatusStore, RedisPlayerMatchStatusStore>();
 builder.Services.AddScoped<IMatchRepository, MatchRepository>();
 builder.Services.AddScoped<IOutboxWriter, OutboxWriter>();
 builder.Services.AddScoped<ITransactionManager, TransactionManager>();

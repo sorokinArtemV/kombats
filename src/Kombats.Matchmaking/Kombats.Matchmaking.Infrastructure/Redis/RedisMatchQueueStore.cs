@@ -102,6 +102,26 @@ public class RedisMatchQueueStore : IMatchQueueStore
         }
     }
 
+    public async Task<bool> IsQueuedAsync(string variant, Guid playerId, CancellationToken cancellationToken = default)
+    {
+        var db = GetDatabase();
+        var queuedKey = GetQueuedSetKey(variant);
+        var playerIdStr = playerId.ToString();
+
+        try
+        {
+            var isMember = await db.SetContainsAsync(queuedKey, playerIdStr);
+            return isMember;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error in IsQueuedAsync for PlayerId: {PlayerId}, Variant: {Variant}",
+                playerId, variant);
+            throw;
+        }
+    }
+
     public async Task<(Guid PlayerAId, Guid PlayerBId)?> TryPopPairAsync(string variant, CancellationToken cancellationToken = default)
     {
         var db = GetDatabase();
