@@ -1,6 +1,8 @@
 using Kombats.Matchmaking.Application.Abstractions;
+using Kombats.Matchmaking.Application.Options;
 using Kombats.Matchmaking.Domain;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Kombats.Matchmaking.Application.UseCases;
 
@@ -12,15 +14,18 @@ public class QueueService
     private readonly IMatchQueueStore _queueStore;
     private readonly IMatchRepository _matchRepository;
     private readonly ILogger<QueueService> _logger;
+    private readonly QueueOptions _options;
 
     public QueueService(
         IMatchQueueStore queueStore,
         IMatchRepository matchRepository,
-        ILogger<QueueService> logger)
+        ILogger<QueueService> logger,
+        IOptions<QueueOptions> options)
     {
         _queueStore = queueStore;
         _matchRepository = matchRepository;
         _logger = logger;
+        _options = options.Value;
     }
 
     /// <summary>
@@ -49,26 +54,7 @@ public class QueueService
             };
         }
 
-        // Check if player is already in queue for idempotency
-        var isQueued = await _queueStore.IsQueuedAsync(variant, playerId, cancellationToken);
-        
-        if (isQueued)
-        {
-            // Already in queue - idempotent operation
-            _logger.LogInformation(
-                "Player already in queue (idempotent join): PlayerId={PlayerId}, Variant={Variant}",
-                playerId, variant);
-            return new PlayerMatchStatus
-            {
-                State = PlayerMatchState.Searching,
-                MatchId = null,
-                BattleId = null,
-                Variant = variant,
-                UpdatedAtUtc = DateTimeOffset.UtcNow
-            };
-        }
-
-        // Enqueue player into match queue (idempotent operation)
+        // Enqueue player into match queue (idempotent operation - TryJoinQueueAsync handles already-queued case)
         bool isAdded = await _queueStore.TryJoinQueueAsync(variant, playerId, cancellationToken);
         
         _logger.LogInformation(
@@ -134,8 +120,20 @@ public class QueueService
     /// First checks Postgres for latest match (source of truth for "in match").
     /// If no active match found, checks Redis queue store (source of truth for "in queue").
     /// Returns null if player is idle (no active match and not queued).
+    /// Uses the configured default variant.
     /// </summary>
     public async Task<PlayerMatchStatus?> GetStatusAsync(Guid playerId, CancellationToken cancellationToken = default)
+    {
+        return await GetStatusAsync(playerId, _options.DefaultVariant, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets the current match status for a player for a specific variant.
+    /// First checks Postgres for latest match (source of truth for "in match").
+    /// If no active match found, checks Redis queue store (source of truth for "in queue").
+    /// Returns null if player is idle (no active match and not queued).
+    /// </summary>
+    public async Task<PlayerMatchStatus?> GetStatusAsync(Guid playerId, string variant, CancellationToken cancellationToken = default)
     {
         // First check Postgres for latest match (source of truth for "in match")
         var match = await _matchRepository.GetLatestForPlayerAsync(playerId, cancellationToken);
@@ -155,11 +153,7 @@ public class QueueService
         }
 
         // No active match in Postgres - check Redis queue store (source of truth for "in queue")
-        // Check if player is in the queued set for default variant (Searching)
-        // Note: For simplicity, we check the default variant. If variant-specific status is needed,
-        // the API should accept a variant parameter and pass it here.
-        const string defaultVariant = "default";
-        var isQueued = await _queueStore.IsQueuedAsync(defaultVariant, playerId, cancellationToken);
+        var isQueued = await _queueStore.IsQueuedAsync(variant, playerId, cancellationToken);
         
         if (isQueued)
         {
@@ -168,7 +162,7 @@ public class QueueService
                 State = PlayerMatchState.Searching,
                 MatchId = null,
                 BattleId = null,
-                Variant = defaultVariant,
+                Variant = variant,
                 UpdatedAtUtc = DateTimeOffset.UtcNow
             };
         }

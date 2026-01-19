@@ -54,42 +54,46 @@ public sealed class MatchTimeoutWorker : BackgroundService
     private async Task ScanAndMarkTimedOutMatchesAsync(IServiceProvider serviceProvider, CancellationToken cancellationToken)
     {
         var dbContext = serviceProvider.GetRequiredService<MatchmakingDbContext>();
-        var matchRepository = serviceProvider.GetRequiredService<IMatchRepository>();
 
-        DateTimeOffset timeoutThreshold = DateTimeOffset.UtcNow.AddSeconds(-_options.TimeoutSeconds);
-        var timedOutMatches = await dbContext.Matches
+        var nowUtc = DateTimeOffset.UtcNow;
+        var timeoutThreshold = nowUtc.AddSeconds(-_options.TimeoutSeconds);
+        
+        // Load entities that need to be timed out
+        var timedOutEntities = await dbContext.Matches
             .Where(m => m.State == (int)MatchState.BattleCreateRequested && m.UpdatedAtUtc < timeoutThreshold)
-            .Select(m => new { m.MatchId, m.BattleId, m.PlayerAId, m.PlayerBId, m.UpdatedAtUtc })
             .ToListAsync(cancellationToken);
 
-        if (timedOutMatches.Count == 0) return;
-        
+        if (timedOutEntities.Count == 0) return;
 
         _logger.LogWarning(
             "Found {Count} matches stuck in BattleCreateRequested state older than {TimeoutSeconds}s",
-            timedOutMatches.Count, _options.TimeoutSeconds);
+            timedOutEntities.Count, _options.TimeoutSeconds);
 
-        foreach (var match in timedOutMatches)
+        // Batch update: mark all entities in memory, then save once
+        foreach (var entity in timedOutEntities)
         {
-            try
-            {
-                var updatedAt = DateTime.UtcNow;
-                await matchRepository.UpdateStateAsync(
-                    match.MatchId,
-                    MatchState.TimedOut,
-                    updatedAt,
-                    cancellationToken);
+            entity.State = (int)MatchState.TimedOut;
+            entity.UpdatedAtUtc = nowUtc; // Use DateTimeOffset.UtcNow directly (offset is already 0)
+        }
 
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            // Log successful updates
+            foreach (var entity in timedOutEntities)
+            {
                 _logger.LogWarning(
                     "Marked match as TimedOut: MatchId={MatchId}, BattleId={BattleId}, PlayerA={PlayerAId}, PlayerB={PlayerBId}, StuckSince={StuckSince}",
-                    match.MatchId, match.BattleId, match.PlayerAId, match.PlayerBId, match.UpdatedAtUtc);
+                    entity.MatchId, entity.BattleId, entity.PlayerAId, entity.PlayerBId, timeoutThreshold);
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "Failed to mark match as TimedOut: MatchId={MatchId}, BattleId={BattleId}",
-                    match.MatchId, match.BattleId);
-            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to save timed out matches batch. Count={Count}",
+                timedOutEntities.Count);
+            throw;
         }
     }
 }

@@ -27,7 +27,7 @@ public interface IMatchRepository
     /// <summary>
     /// Updates the state of an existing match.
     /// </summary>
-    Task UpdateStateAsync(Guid matchId, MatchState newState, DateTime updatedAtUtc, CancellationToken cancellationToken = default);
+    Task UpdateStateAsync(Guid matchId, MatchState newState, DateTimeOffset updatedAtUtc, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Attempts to update match state using Compare-And-Swap (CAS) pattern.
@@ -38,7 +38,7 @@ public interface IMatchRepository
         Guid matchId,
         MatchState expectedState,
         MatchState newState,
-        DateTime updatedAtUtc,
+        DateTimeOffset updatedAtUtc,
         CancellationToken cancellationToken = default);
 }
 

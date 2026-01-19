@@ -38,54 +38,70 @@ public sealed class MatchmakingWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation(
-            "MatchmakingWorker started. InstanceId={InstanceId}, TickDelay={TickDelayMs}ms",
-            _instanceId, _options.TickDelayMs);
+            "MatchmakingWorker started. InstanceId={InstanceId}, TickDelay={TickDelayMs}ms, Variants=[{Variants}], LockTtl={LockTtlMs}ms, RedisDb={RedisDb}",
+            _instanceId,
+            _options.TickDelayMs,
+            string.Join(", ", _options.Variants),
+            _options.ClaimLeaseTtlMs,
+            _options.RedisDatabaseIndex);
 
-        const string variant = "default";
-        var lockKey = RedisLeaseLock.GetLockKey(variant);
-        const int lockTtlMs = 5000; // Lock expires after 5 seconds (must be renewed)
+        // Construct RedisLeaseLock once per worker (database index is fixed)
+        var leaseLock = new RedisLeaseLock(_redis, _leaseLockLogger, _options.RedisDatabaseIndex);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                using var scope = _scopeFactory.CreateScope();
-                var leaseLock = new RedisLeaseLock(_redis, _leaseLockLogger, 1);
-
-                // Try to acquire lease lock for this variant
-                var lockAcquired = await leaseLock.TryAcquireLockAsync(
-                    lockKey,
-                    lockTtlMs,
-                    _instanceId,
-                    stoppingToken);
-
-                if (!lockAcquired)
+                // Process each variant
+                foreach (var variant in _options.Variants)
                 {
-                    // Another instance has the lock - sleep and retry
-                    _logger.LogDebug(
-                        "Lease lock not acquired for variant {Variant}, sleeping. InstanceId={InstanceId}",
-                        variant, _instanceId);
-                    await Task.Delay(TimeSpan.FromMilliseconds(_options.TickDelayMs), stoppingToken);
-                    continue;
+                    if (stoppingToken.IsCancellationRequested)
+                        break;
+
+                    var lockKey = RedisLeaseLock.GetLockKey(variant);
+
+                    // Try to acquire lease lock for this variant
+                    var lockAcquired = await leaseLock.TryAcquireLockAsync(
+                        lockKey,
+                        _options.ClaimLeaseTtlMs,
+                        _instanceId,
+                        stoppingToken);
+
+                    if (!lockAcquired)
+                    {
+                        // Another instance has the lock - skip this variant and continue
+                        _logger.LogDebug(
+                            "Lease lock not acquired for variant {Variant}, skipping. InstanceId={InstanceId}",
+                            variant, _instanceId);
+                        continue;
+                    }
+
+                    try
+                    {
+                        // We have the lock - perform matchmaking tick
+                        // Note: The critical section must complete within ClaimLeaseTtlMs
+                        using var scope = _scopeFactory.CreateScope();
+                        var matchmakingService = scope.ServiceProvider.GetRequiredService<MatchmakingService>();
+                        var result = await matchmakingService.MatchmakingTickAsync(variant, stoppingToken);
+
+                        if (result.Type == MatchCreatedResultType.MatchCreated && result.MatchInfo != null)
+                        {
+                            _logger.LogInformation(
+                                "Match created: MatchId={MatchId}, BattleId={BattleId}, PlayerA={PlayerAId}, PlayerB={PlayerBId}, Variant={Variant}, InstanceId={InstanceId}",
+                                result.MatchInfo.MatchId,
+                                result.MatchInfo.BattleId,
+                                result.MatchInfo.PlayerAId,
+                                result.MatchInfo.PlayerBId,
+                                variant,
+                                _instanceId);
+                        }
+                    }
+                    finally
+                    {
+                        // Release lock (optional - it will expire anyway, but good practice)
+                        await leaseLock.ReleaseLockAsync(lockKey, _instanceId, stoppingToken);
+                    }
                 }
-
-                // We have the lock - perform matchmaking tick
-                var matchmakingService = scope.ServiceProvider.GetRequiredService<MatchmakingService>();
-                var result = await matchmakingService.MatchmakingTickAsync(variant, stoppingToken);
-
-                if (result.Type == MatchCreatedResultType.MatchCreated && result.MatchInfo != null)
-                {
-                    _logger.LogInformation(
-                        "Match created: MatchId={MatchId}, BattleId={BattleId}, PlayerA={PlayerAId}, PlayerB={PlayerBId}, InstanceId={InstanceId}",
-                        result.MatchInfo.MatchId,
-                        result.MatchInfo.BattleId,
-                        result.MatchInfo.PlayerAId,
-                        result.MatchInfo.PlayerBId,
-                        _instanceId);
-                }
-
-                // Release lock (optional - it will expire anyway, but good practice)
-                await leaseLock.ReleaseLockAsync(lockKey, _instanceId, stoppingToken);
             }
             catch (Exception ex)
             {
@@ -94,8 +110,12 @@ public sealed class MatchmakingWorker : BackgroundService
                     _instanceId);
             }
 
-            // Wait for configured delay before next tick
-            await Task.Delay(TimeSpan.FromMilliseconds(_options.TickDelayMs), stoppingToken);
+            // Wait for configured delay before next tick (with jitter to reduce thundering herd)
+            // Jitter: ±20% of TickDelayMs to smooth load distribution across instances
+            var jitterRange = (int)(_options.TickDelayMs * 0.2);
+            var jitter = Random.Shared.Next(-jitterRange, jitterRange + 1);
+            var delayMs = Math.Max(1, _options.TickDelayMs + jitter); // Ensure at least 1ms delay
+            await Task.Delay(TimeSpan.FromMilliseconds(delayMs), stoppingToken);
         }
 
         _logger.LogInformation(

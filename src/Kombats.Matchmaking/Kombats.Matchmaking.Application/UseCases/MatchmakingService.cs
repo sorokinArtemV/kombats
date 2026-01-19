@@ -1,3 +1,4 @@
+using Kombats.Battle.Contracts.Battle;
 using Kombats.Matchmaking.Application.Abstractions;
 using Kombats.Matchmaking.Domain;
 using Microsoft.Extensions.Logging;
@@ -81,7 +82,8 @@ public class MatchmakingService
             await _matchRepository.InsertAsync(match, cancellationToken);
 
             // 2) Add outbox message entity to DbContext (does NOT call SaveChanges)
-            var createBattleCommand = new
+            // Use type-safe contract instead of anonymous object
+            var createBattleCommand = new CreateBattle
             {
                 BattleId = battleId,
                 MatchId = matchId,
@@ -92,11 +94,15 @@ public class MatchmakingService
 
             var messagePayload = JsonSerializer.Serialize(createBattleCommand, JsonOptions);
 
+            // Derive Type from contract type (FullName + Assembly name for type resolution)
+            var contractType = typeof(CreateBattle);
+            var typeString = $"{contractType.FullName}, {contractType.Assembly.GetName().Name}";
+
             var outboxMessage = new OutboxMessage
             {
                 Id = Guid.NewGuid(),
                 OccurredAtUtc = nowUtc,
-                Type = "Kombats.Contracts.Battle:CreateBattle",
+                Type = typeString,
                 Payload = messagePayload,
                 CorrelationId = matchId // Use matchId as correlation for tracking
             };

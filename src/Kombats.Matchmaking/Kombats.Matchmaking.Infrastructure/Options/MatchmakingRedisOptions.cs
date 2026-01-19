@@ -32,6 +32,25 @@ public class MatchmakingWorkerOptions
     /// Default: 100ms.
     /// </summary>
     public int TickDelayMs { get; set; } = 100;
+
+    /// <summary>
+    /// List of matchmaking variants to process.
+    /// Default: ["default"].
+    /// </summary>
+    public string[] Variants { get; set; } = ["default"];
+
+    /// <summary>
+    /// Redis database index to use for lease locks.
+    /// Default: 1.
+    /// </summary>
+    public int RedisDatabaseIndex { get; set; } = 1;
+
+    /// <summary>
+    /// Time-to-live for the lease lock in milliseconds.
+    /// The critical section (matchmaking tick) must complete within this time.
+    /// Default: 5000ms (5 seconds).
+    /// </summary>
+    public int ClaimLeaseTtlMs { get; set; } = 5000;
 }
 
 

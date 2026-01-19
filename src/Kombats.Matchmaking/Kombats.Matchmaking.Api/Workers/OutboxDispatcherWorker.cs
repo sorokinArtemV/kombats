@@ -1,3 +1,4 @@
+using Kombats.Battle.Contracts.Battle;
 using Kombats.Matchmaking.Infrastructure.Data;
 using Kombats.Matchmaking.Infrastructure.Options;
 using MassTransit;
@@ -124,7 +125,7 @@ public sealed class OutboxDispatcherWorker : BackgroundService
     {
         // Determine endpoint based on message type
         Uri endpointUri;
-        if (message.Type.Contains("CreateBattle", StringComparison.OrdinalIgnoreCase))
+        if (IsCreateBattleMessage(message.Type))
         {
             endpointUri = new Uri(_options.CreateBattleQueueName);
         }
@@ -136,35 +137,20 @@ public sealed class OutboxDispatcherWorker : BackgroundService
         // Get endpoint
         var endpoint = await sendEndpointProvider.GetSendEndpoint(endpointUri);
         
-        // Deserialize payload JSON to object and send
-        // MassTransit will serialize it when sending to RabbitMQ
-        // We use JsonElement to handle dynamic deserialization
-        var payloadElement = JsonSerializer.Deserialize<JsonElement>(message.Payload, JsonOptions);
-        
-        // Convert JsonElement to object for MassTransit
-        // MassTransit can send anonymous objects, but we need to ensure proper type information
-        // For CreateBattle command, we reconstruct the object structure
+        // Deserialize payload to type-safe contract
         object? commandObj = null;
-        if (message.Type.Contains("CreateBattle", StringComparison.OrdinalIgnoreCase))
+        if (IsCreateBattleMessage(message.Type))
         {
-            // Deserialize to anonymous type matching CreateBattle structure
-            commandObj = new
+            // Deserialize to CreateBattle contract type
+            commandObj = JsonSerializer.Deserialize<CreateBattle>(message.Payload, JsonOptions);
+            if (commandObj == null)
             {
-                BattleId = payloadElement.GetProperty("battleId").GetGuid(),
-                MatchId = payloadElement.GetProperty("matchId").GetGuid(),
-                PlayerAId = payloadElement.GetProperty("playerAId").GetGuid(),
-                PlayerBId = payloadElement.GetProperty("playerBId").GetGuid(),
-                RequestedAt = payloadElement.GetProperty("requestedAt").GetDateTimeOffset()
-            };
+                throw new InvalidOperationException($"Failed to deserialize CreateBattle payload: {message.Type}");
+            }
         }
         else
         {
-            throw new InvalidOperationException($"Unsupported message type for dynamic deserialization: {message.Type}");
-        }
-        
-        if (commandObj == null)
-        {
-            throw new InvalidOperationException($"Failed to deserialize message payload: {message.Type}");
+            throw new InvalidOperationException($"Unsupported message type: {message.Type}");
         }
         
         await endpoint.Send(commandObj, cancellationToken);
@@ -177,6 +163,18 @@ public sealed class OutboxDispatcherWorker : BackgroundService
         _logger.LogDebug(
             "Dispatched outbox message: Id={MessageId}, Type={MessageType}, Endpoint={Endpoint}",
             message.Id, message.Type, endpointUri);
+    }
+
+    /// <summary>
+    /// Checks if the message type represents a CreateBattle command.
+    /// Supports both old format ("Kombats.Contracts.Battle:CreateBattle") and new format (FullName + Assembly).
+    /// </summary>
+    private static bool IsCreateBattleMessage(string messageType)
+    {
+        // Support both old and new type string formats for backwards compatibility
+        return messageType.Contains("CreateBattle", StringComparison.OrdinalIgnoreCase) &&
+               (messageType.Contains("Battle", StringComparison.OrdinalIgnoreCase) ||
+                messageType.Contains("Kombats.Battle.Contracts", StringComparison.OrdinalIgnoreCase));
     }
 }
 

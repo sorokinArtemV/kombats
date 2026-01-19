@@ -4,6 +4,7 @@ using Kombats.Matchmaking.Application.Abstractions;
 using Kombats.Matchmaking.Application.UseCases;
 using Kombats.Matchmaking.Infrastructure.Data;
 using Kombats.Matchmaking.Infrastructure.Messaging;
+using Kombats.Matchmaking.Application.Options;
 using Kombats.Matchmaking.Infrastructure.Options;
 using Kombats.Matchmaking.Infrastructure.Redis;
 using Kombats.Matchmaking.Infrastructure.Repositories;
@@ -44,6 +45,10 @@ builder.Services.Configure<MatchmakingWorkerOptions>(
 // Configure Match Timeout Worker options
 builder.Services.Configure<MatchTimeoutWorkerOptions>(
     builder.Configuration.GetSection(MatchTimeoutWorkerOptions.SectionName));
+
+// Configure Queue options
+builder.Services.Configure<QueueOptions>(
+    builder.Configuration.GetSection(QueueOptions.SectionName));
 
 // Configure Outbox Dispatcher options
 builder.Services.Configure<OutboxDispatcherOptions>(

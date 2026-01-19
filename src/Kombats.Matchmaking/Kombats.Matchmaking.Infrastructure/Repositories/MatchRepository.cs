@@ -65,7 +65,7 @@ public class MatchRepository : IMatchRepository
     {
         try
         {
-            var entity = ToEntity(match);
+            MatchEntity entity = ToEntity(match);
             await _dbContext.Matches.AddAsync(entity, cancellationToken);
             // Note: SaveChangesAsync is NOT called here - it should be called
             // in the same transaction as other entities (e.g., outbox messages)
@@ -84,7 +84,7 @@ public class MatchRepository : IMatchRepository
         }
     }
 
-    public async Task UpdateStateAsync(Guid matchId, MatchState newState, DateTime updatedAtUtc, CancellationToken cancellationToken = default)
+    public async Task UpdateStateAsync(Guid matchId, MatchState newState, DateTimeOffset updatedAtUtc, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -100,7 +100,10 @@ public class MatchRepository : IMatchRepository
             }
 
             entity.State = (int)newState;
-            entity.UpdatedAtUtc = new DateTimeOffset(updatedAtUtc, TimeSpan.Zero);
+            // Ensure UTC offset (normalize to offset 0 if needed)
+            entity.UpdatedAtUtc = updatedAtUtc.Offset == TimeSpan.Zero
+                ? updatedAtUtc
+                : new DateTimeOffset(updatedAtUtc.UtcDateTime, TimeSpan.Zero);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -121,18 +124,23 @@ public class MatchRepository : IMatchRepository
         Guid matchId,
         MatchState expectedState,
         MatchState newState,
-        DateTime updatedAtUtc,
+        DateTimeOffset updatedAtUtc,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            // Ensure UTC offset (normalize to offset 0 if needed)
+            var normalizedUpdatedAtUtc = updatedAtUtc.Offset == TimeSpan.Zero
+                ? updatedAtUtc
+                : new DateTimeOffset(updatedAtUtc.UtcDateTime, TimeSpan.Zero);
+
             // CAS update: only update if current state matches expected state
             var affectedRows = await _dbContext.Matches
                 .Where(m => m.MatchId == matchId && m.State == (int)expectedState)
                 .ExecuteUpdateAsync(
                     setter => setter
                         .SetProperty(m => m.State, (int)newState)
-                        .SetProperty(m => m.UpdatedAtUtc, new DateTimeOffset(updatedAtUtc, TimeSpan.Zero)),
+                        .SetProperty(m => m.UpdatedAtUtc, normalizedUpdatedAtUtc),
                     cancellationToken);
 
             var success = affectedRows > 0;

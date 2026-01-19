@@ -9,11 +9,13 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Kombats.Matchmaking.Domain\Kombats.Matchmaking.Domain.csproj"/>
+        <ProjectReference Include="..\..\Kombats.Battle\Kombats.Battle.Contracts\Kombats.Battle.Contracts.csproj"/>
     </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="MassTransit.Abstractions" Version="8.3.0"/>
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0"/>
+        <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.0"/>
     </ItemGroup>
 
 </Project>
